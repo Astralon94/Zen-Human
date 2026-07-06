@@ -43,7 +43,7 @@ export function render() {
   h += `<div class="section-title">Zona pericolosa</div>`;
   h += `<div class="card"><button class="btn danger" data-wipe>Cancella tutti i dati</button></div>`;
 
-  h += `<div class="muted" style="text-align:center;font-size:12px;margin-top:24px">Zen Human · v${APP_BUILD} · server locale · nessun cloud</div>`;
+  h += `<div class="muted" style="text-align:center;font-size:12px;margin-top:24px">Zen Human · v${APP_BUILD} · server locale</div>`;
   return h;
 }
 

@@ -34,15 +34,7 @@ button { cursor: pointer; border: none; background: none; }
 }
 .topbar .brand { font-weight: 600; letter-spacing: .2px; font-size: 16px; color: var(--txt); }
 .topbar .spacer { flex: 1; }
-.metabadge {
-  display: inline-flex; align-items: center; gap: 9px;
-  padding: 4px 11px; border: 1px solid var(--line); border-radius: 999px;
-  background: var(--card2); line-height: 1.15;
-}
-.metabadge .mb-item { display: inline-flex; align-items: baseline; gap: 5px; }
-.metabadge .mb-k { color: var(--sub); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
-.metabadge .mb-v { color: var(--txt); font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
-.metabadge .mb-sep { width: 1px; height: 13px; background: var(--line); align-self: center; }
+.savebadge { display: inline-flex; align-items: center; }
 .selbox {
   background: var(--card); border: 1px solid var(--line); border-radius: 10px;
   padding: 7px 30px 7px 11px; appearance: none; max-width: 46vw; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
@@ -194,16 +186,6 @@ table.matrix td.mcell sup { font-size: 11px; line-height: 0; }
 table.matrix .nettocol { position: sticky; right: 0; z-index: 3; width: 96px; background: var(--card); text-align: right; padding: 6px 12px; font-variant-numeric: tabular-nums; font-weight: 700; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 table.matrix thead .nettocol { z-index: 4; background: var(--card2); }
 
-/* ---- gate (schermata di blocco: cartella dati richiesta) ---- */
-.gate { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg); }
-.gate-card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 12px 44px rgba(0,0,0,.12); padding: 36px 32px; max-width: 460px; width: 100%; text-align: center; }
-.gate-icon { width: 64px; height: 64px; border-radius: 16px; background: var(--accent); display: flex; align-items: center; justify-content: center; margin: 0 auto 18px; box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 38%, transparent); }
-.gate-card h1 { font-size: 23px; font-weight: 600; letter-spacing: .2px; margin: 0 0 12px; }
-.gate-card p { color: var(--sub); font-size: 14px; line-height: 1.55; margin: 0 0 22px; }
-.gate-card p b { color: var(--txt); }
-.gate-card .btn { width: auto; padding: 12px 24px; font-size: 15px; }
-.gate-foot { color: var(--sub); font-size: 12px; margin-top: 18px; }
-
 /* ---- toast ---- */
 #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px); background: var(--txt); color: var(--bg);
   padding: 11px 18px; border-radius: 12px; font-weight: 600; box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: .2s; z-index: 80; max-width: 90vw; }
@@ -218,8 +200,6 @@ table.matrix thead .nettocol { z-index: 4; background: var(--card2); }
   .sheet.show { transform: translate(-50%, 0); }
   .grid.k4 { grid-template-columns: repeat(2, 1fr); } .grid.k3 { grid-template-columns: repeat(2, 1fr); }
   .topbar .brand { display: none; }
-  .metabadge .mb-k { display: none; }
-  .metabadge { gap: 7px; padding: 3px 9px; }
   .cal .day { min-height: 44px; }
   .stpick { grid-template-columns: 1fr; }
 }
