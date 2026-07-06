@@ -28,10 +28,13 @@ let snapshot = null;
 
 // ---- Stato del salvataggio (spia AFFIDABILE: riflette l'esito reale lato server) ----
 // 'saved' = tutto confermato · 'saving' = modifica non ancora confermata · 'error' = ultima scrittura fallita
+// 'conflict' = il server ha rifiutato (409): un'altra scheda ha scritto → attende scelta utente
 let dirty = false, errored = false;
+let conflict = false;   // il server ha rifiutato (409): un'altra scheda ha scritto → attende scelta utente
+let serverRev = null;   // revisione attuale del server comunicata col 409 (per il "forza")
 const statusListeners = new Set();
 export function onSaveStatus(fn) { statusListeners.add(fn); return () => statusListeners.delete(fn); }
-export function saveStatus() { return errored ? 'error' : (inflight || dirty) ? 'saving' : 'saved'; }
+export function saveStatus() { return conflict ? 'conflict' : errored ? 'error' : (inflight || dirty) ? 'saving' : 'saved'; }
 function notifyStatus() { const s = saveStatus(); statusListeners.forEach(fn => { try { fn(s); } catch (e) { console.error(e); } }); }
 
 // ---- Snapshot & diff -------------------------------------------------------
@@ -90,20 +93,49 @@ export function save({ silent = false } = {}) {
 
 async function flushChanges() {
   if (!snapshot) return;
+  if (conflict) return; // in conflitto: si attende la scelta dell'utente (ricarica/forza), niente auto-save
   if (inflight) { clearTimeout(saveTimer); saveTimer = setTimeout(flushChanges, 200); return; }
   const cs = diff(snapshot, data);
   if (!cs) { dirty = false; errored = false; notifyStatus(); return; } // niente da inviare = già in sync
+  cs.baseRev = data.rev ?? null; // revisione su cui si basano queste modifiche (guardia 409 lato server)
   const sent = snapOf(data);
   inflight = true; dirty = false; notifyStatus();
   try {
     const res = await fetch('/api/changes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cs) });
     if (res.ok) { const j = await res.json(); if (j && j.rev) data.rev = j.rev; snapshot = sent; lastSavedAt = Date.now(); errored = false; }
+    else if (res.status === 409) { // un'altra scheda ha scritto: NON sovrascrivere, chiedi all'utente
+      const j = await res.json().catch(() => ({}));
+      serverRev = (j && j.rev != null) ? j.rev : null;
+      conflict = true; dirty = true; errored = false; // modifiche locali conservate
+      console.warn('Conflitto di concorrenza: il database è stato modificato altrove.');
+    }
     else { errored = true; dirty = true; console.error('Salvataggio non riuscito:', res.status); } // NON confermato → resta da salvare
   } catch (e) { errored = true; dirty = true; console.error('Errore di salvataggio:', e); }
   finally {
     inflight = false; notifyStatus();
-    if (dirty) { clearTimeout(saveTimer); saveTimer = setTimeout(flushChanges, errored ? 3000 : 250); } // riprova
+    if (dirty && !conflict) { clearTimeout(saveTimer); saveTimer = setTimeout(flushChanges, errored ? 3000 : 250); } // riprova (non in conflitto)
   }
+}
+
+// Ricarica lo stato dal server SCARTANDO le modifiche locali non salvate (scelta "Ricarica" nel conflitto).
+export async function reloadFromServer() {
+  try {
+    const res = await fetch('/api/data');
+    if (!res.ok) return false;
+    data = migrate(await res.json());
+    snapshot = snapOf(data);
+    conflict = false; dirty = false; errored = false; serverRev = null;
+    notifyStatus(); emit();
+    return true;
+  } catch (e) { return false; }
+}
+
+// Forza il salvataggio delle modifiche locali sovrascrivendo l'altra scheda (scelta "Forza" nel conflitto):
+// allinea il baseRev alla revisione attuale del server, così il prossimo changeset viene accettato.
+export function forceSave() {
+  if (serverRev != null) data.rev = serverRev;
+  conflict = false; serverRev = null; dirty = true; notifyStatus();
+  clearTimeout(saveTimer); saveTimer = setTimeout(flushChanges, 0);
 }
 
 // Sostituzione TOTALE (import/wipe): PUT dell'intero stato + backup forzato lato server.
@@ -127,9 +159,10 @@ export function setData(newData, { persist = true } = {}) {
 }
 
 export function flush() {
-  if (!snapshot) return;
+  if (!snapshot || conflict) return;
   const cs = diff(snapshot, data);
   if (!cs) return;
+  cs.baseRev = data.rev ?? null; // se un'altra scheda ha già scritto, il server rifiuta (protegge i dati)
   try {
     fetch('/api/changes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cs), keepalive: true });
   } catch (e) {}
