@@ -4,6 +4,9 @@ node_modules/
 # Build output (rigenerato da zen-deployer)
 dist/
 
+# Database locale + backup (dati, non codice — non versionati)
+data/
+
 # Vite cache
 .vite/
 node_modules/.vite/

@@ -1,9 +1,13 @@
-# Zen Human
+# Zen Human — versione server (sperimentale)
 
 App per il tracciamento di **presenze, assenze, voci economiche** e per la generazione del
-**prospetto da inviare al consulente del lavoro**. Stessa famiglia di *Inconty*:
-**offline-first, 100% locale**, niente cloud, niente backend. I dati restano sul dispositivo;
-il backup è un file JSON.
+**prospetto da inviare al consulente del lavoro**. **100% locale**, niente cloud, niente account.
+
+> **Variante `-server`.** A differenza dell'originale (Vite + File System Access API, solo Chrome),
+> questa versione gira su un **server locale Node** (`node:http`) con un **database relazionale
+> `node:sqlite`** (zero dipendenze a runtime). Il frontend resta la stessa SPA, ma persiste via API
+> (`/api/data`, `/api/changes`) invece che su cartella del disco. I dati vivono in
+> `data/zenhuman.db`, con backup automatici in `data/backups/`.
 
 ## Cosa fa
 
@@ -12,52 +16,59 @@ il backup è un file JSON.
 - Database di dipendenti diviso per azienda; selettore azienda nella topbar.
 
 **Scheda dipendente**
-- Anagrafica base (nome, cognome, mansione, colore, stato attivo/cessato).
-- **Stipendio netto pattuito storicizzato per mese**: ogni mese può avere un valore diverso e lo storico resta consultabile.
-- **Calendario presenze giornaliero**: si segna ogni giorno con uno stato (Presente, Ferie, Malattia, Infortunio, Permesso ROL, Permesso non retribuito, Riposo). Vuoto di default.
-- Per ogni assenza/permesso si può inserire un **importo da scalare** dal netto (manuale, nessun calcolo proporzionale automatico).
-- **Voci del mese**: bonus (+), sanzioni (−), acconti (−), con importo, data e descrizione.
-- **Prestiti rateizzati**: piano rate generato in automatico (totale, n° rate, mese di partenza, importo rata) con residuo e barra di avanzamento; ogni rata si può segnare pagata o saltare.
+- Anagrafica base (nome, cognome, mansione, colore, stato attivo/cessato) e scadenze contratto/libretto.
+- **Stipendio netto pattuito storicizzato per mese**: ogni mese può avere un valore diverso.
+- **Calendario presenze giornaliero**: stato per giorno (Presente, Ferie, Malattia, Infortunio, Permesso ROL, Permesso non retribuito, Riposo) con turno e bonus turno.
+- Per ogni assenza/permesso un **importo da scalare** dal netto (manuale).
+- **Voci del mese**: bonus (+), sanzioni (−), acconti (−).
+- **Prestiti rateizzati**: piano rate con residuo; ogni rata si può segnare pagata o saltare.
 
 **Riepilogo (prospetto per il consulente)**
-- Tabella mensile per azienda: giorni lavorati, conteggio assenze per tipo, netto per dipendente, totali.
+- Tabella mensile per azienda: giorni lavorati, assenze per tipo, netto per dipendente, totali.
 - Netto calcolato: `pattuito + bonus − sanzioni − acconti − rate prestiti − trattenute assenze`.
-- Lo stato e i totali sono **sempre calcolati, mai salvati** (come lo stato fatture in Inconty).
-- **Export PDF** (stampabile, con dettaglio voci) e **Export Excel/CSV**.
+- Stato e totali sono **sempre calcolati, mai salvati**.
+- **Export PDF** (consulente/interno) e **Export CSV**.
 
-**Altro**: tema chiaro/scuro, installabile come PWA. La gestione delle **aziende** (crea/modifica/elimina) è dentro **Impostazioni**.
-- **Cartella dati / vault (Chrome)**: unico meccanismo di salvataggio/backup. Collega una cartella su disco
-  (anche iCloud/Dropbox) in cui l'app salva tutto automaticamente (`zen-human.json`, più `backups/` e
-  `snapshots/` ripristinabili dalle Impostazioni). La copia nel browser resta come rete di sicurezza;
-  al boot vince la copia con `rev` più alto.
+**Altro**: tema chiaro/scuro, **backup/ripristino JSON** dalle Impostazioni. Gestione **aziende** dentro Impostazioni.
 
 ## Architettura
-Sorgenti modulari in `src/`, build in un **unico `index.html` self-contained** (tutto JS/CSS inlinato)
-→ gira offline anche da file locale ed è installabile come PWA quando servito via HTTP.
+
+Server Node (zero dipendenze a runtime) + SPA. Il frontend resta modulare in `src/`,
+buildato con Vite in un **`index.html` self-contained** servito dal server da `public/`.
 
 ```
-src/
-  state/     model.js (dati, stati presenza, migrazioni), store.js (persistenza + vault)
-  domain/    util.js (denaro/date/mesi), payroll.js (stipendio, presenze, prestiti, netto)
-  ui/        app.js (shell+router), dom.js, styles.css,
-             views/ (riepilogo, dipendenti, aziende, impostazioni)
+server.js          server node:http — statico da public/ + API /api
+server/
+  schema.js        specifica tabelle (colonne indicizzate + doc JSON verbatim)
+  db.js            connessione node:sqlite, WAL + foreign_keys, DDL, backup
+  serialize.js     import/export + applyChanges (transazionale, lossless)
+scripts/           reset.mjs, roundtrip.mjs (test), import-vault.mjs
+src/               frontend (invariato salvo state/store.js → API)
+  state/     model.js (dati, stati presenza, migrazioni), store.js (persistenza via API)
+  domain/    util.js, payroll.js (stipendio, presenze, prestiti, netto)
+  ui/        app.js (shell+router), views/ (riepilogo, compilazione, bonus-sanzioni, dipendenti, scadenze, impostazioni, aziende)
+data/              zenhuman.db (+ backups/) — NON versionato
 ```
 
-## Persistenza robusta
-Fonte di verità in memoria; due copie durevoli: **localStorage + IndexedDB**. Ogni salvataggio
-incrementa un contatore `rev` monotòno: al boot si adotta **sempre** la copia con `rev` più alto.
+## Persistenza e integrità
+Fonte di verità: il **DB SQLite** del server. Modello **ibrido documento-relazionale**: ogni entità ha
+colonne tipizzate/indicizzate per le query **più** una colonna `doc` con il JSON verbatim → export
+lossless per costruzione. `employees` porta `salaries[]` e `loans[]` (con `plan[]`) annidati nel proprio
+doc. `WAL` + `foreign_keys`, import **transazionale** con backup del DB, `rev` **monotòno**.
+Il `save()` invia solo i record cambiati (**changeset granulare** su `/api/changes`).
 
 ## Comandi
 ```bash
-npm install      # dipendenze (solo build)
-npm run dev      # sviluppo con hot-reload
-npm run build    # genera dist/index.html (app da usare/distribuire)
-npm run preview  # anteprima della build
+npm install          # dipendenze SOLO di build (vite)
+npm run build        # builda il frontend → public/index.html
+npm start            # avvia il server → http://localhost:4332
+npm run reset-db     # riporta il DB ai dati di default (con backup)
+npm run test:roundtrip  # test d'integrità (in memoria)
 ```
 
 ## Uso
-Apri **`dist/index.html`**. Per la PWA installabile servila via HTTP (`npm run preview`,
-`python -m http.server`, il Raspberry Pi, ecc.). Su macOS/Chrome puoi installarla come app.
-Backup e trasferimento dati avvengono tramite la **cartella dati** collegata (Impostazioni → Cartella dati).
+1. `npm install && npm run build` (la prima volta, e dopo ogni modifica al frontend)
+2. `npm start` → apri **http://localhost:4332**
 
-> Pensata per uso esclusivo su **Mac + Chrome** (sfrutta la File System Access API per il vault su cartella).
+Backup/trasferimento dati: Impostazioni → *Esporta backup* / *Importa backup* (JSON),
+compatibile con l'export dell'app originale.

@@ -1,8 +1,7 @@
 // ============ Shell applicativa: topbar, nav a tendina, selettore azienda, router ============
 import './styles.css';
-import { data, subscribe, subscribeMeta, save, vaultStatus, connectVault, reauthorizeVault, vaultMeta } from '../state/store.js';
-import { esc, pad2 } from '../domain/util.js';
-import { toast } from './dom.js';
+import { data, subscribe, save, onSaveStatus, saveStatus } from '../state/store.js';
+import { esc } from '../domain/util.js';
 
 import * as riepilogo from './views/riepilogo.js';
 import * as compilazione from './views/compilazione.js';
@@ -40,22 +39,17 @@ function companySelect() {
   return `<select class="selbox" id="coSel" aria-label="Azienda attiva">${opts.join('')}</select>`;
 }
 
-// Timestamp leggibile: solo hh:mm se è oggi, altrimenti gg/mm hh:mm. "—" se mai avvenuto.
-function fmtTs(t) {
-  if (!t) return '—';
-  const d = new Date(t), now = new Date();
-  const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-  return d.toDateString() === now.toDateString() ? hm : `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)} ${hm}`;
+// Spia di salvataggio: riflette lo stato reale confermato dal server.
+function saveBadgeInner() {
+  const conf = {
+    saved:  { c: '#6b8f80', dot: '●', t: 'Salvato' },
+    saving: { c: '#b08a4e', dot: '◍', t: 'Salvataggio…' },
+    error:  { c: '#c2685f', dot: '▲', t: 'Non salvato' },
+  };
+  const m = conf[saveStatus()] || conf.saved;
+  return `<span style="color:${m.c}">${m.dot} ${m.t}</span>`;
 }
-
-// Badge topbar: ultimo snapshot e ultimo backup del vault, aggiornati in tempo reale.
-function metaBadgeInner() {
-  const m = vaultMeta();
-  return `<span class="mb-item"><span class="mb-k">Snapshot</span><span class="mb-v tnum">${fmtTs(m.lastSnapshotAt)}</span></span>
-    <span class="mb-sep"></span>
-    <span class="mb-item"><span class="mb-k">Backup</span><span class="mb-v tnum">${fmtTs(m.lastBackupAt)}</span></span>`;
-}
-function refreshMetaBadge() { const el = document.getElementById('metaBadge'); if (el) el.innerHTML = metaBadgeInner(); }
+function refreshSaveBadge() { const el = document.getElementById('saveBadge'); if (el) el.innerHTML = saveBadgeInner(); }
 
 function navMenu() {
   const items = ORDER.map(k => {
@@ -75,7 +69,7 @@ export function renderApp() {
     <div class="topbar">
       ${navMenu()}
       <span class="brand">Zen Human</span>
-      <span class="metabadge" id="metaBadge" title="Ultimo snapshot e ultimo backup salvati sul disco">${metaBadgeInner()}</span>
+      <span class="savebadge" id="saveBadge" title="Stato del salvataggio sul database" style="font-size:12px;font-weight:600;white-space:nowrap;margin-left:10px">${saveBadgeInner()}</span>
       <span class="spacer"></span>
       ${companySelect()}
     </div>
@@ -95,61 +89,8 @@ export function renderApp() {
   if (v.bind) v.bind(root);
 }
 
-// ---- Gate: l'app richiede una cartella dati collegata (File System Access, Chrome) ----
-function gateState() {
-  const v = vaultStatus();
-  if (!v.supported) return 'unsupported';
-  if (v.active) return 'ok';
-  if (v.needsPerm) return 'reauth';
-  return 'connect';
-}
-
-const GATE_ICON = `<div class="gate-icon"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="17" rx="3"/><line x1="3" y1="9.5" x2="21" y2="9.5"/><line x1="8" y1="2.5" x2="8" y2="6.5"/><line x1="16" y1="2.5" x2="16" y2="6.5"/><circle cx="8" cy="14" r="1"/><circle cx="12" cy="14" r="1"/><circle cx="16" cy="14" r="1"/></svg></div>`;
-
-function renderGate(state) {
-  const app = document.getElementById('app');
-  let msg, btn = '', foot = '';
-  if (state === 'unsupported') {
-    msg = `Questa app è local-first e richiede l'accesso a una cartella sul disco tramite il <b>File System Access</b> di Chrome. Aprila con Google Chrome o un browser Chromium su Mac/PC.`;
-  } else if (state === 'reauth') {
-    msg = `La cartella dati è collegata ma serve <b>riautorizzare</b> l'accesso per continuare.`;
-    btn = `<button class="btn primary" id="gateBtn">Riautorizza cartella</button>`;
-    foot = `La copia nel browser resta come rete di sicurezza.`;
-  } else {
-    msg = `Scegli una cartella sul disco (anche in iCloud/Dropbox): Zen Human vi salverà automaticamente tutti i dati di aziende e dipendenti, con backup e snapshot ripristinabili. Nessun cloud, nessun account.`;
-    btn = `<button class="btn primary" id="gateBtn">Scegli la cartella dati…</button>`;
-    foot = `La copia nel browser resta come rete di sicurezza.`;
-  }
-  app.innerHTML = `<div class="gate"><div class="gate-card">
-    ${GATE_ICON}
-    <h1>Zen Human</h1>
-    <p>${msg}</p>
-    ${btn}
-    ${foot ? `<div class="gate-foot">${foot}</div>` : ''}
-  </div></div>`;
-  const b = app.querySelector('#gateBtn');
-  if (b) b.onclick = async () => {
-    b.disabled = true;
-    const r = state === 'reauth' ? await reauthorizeVault() : await connectVault();
-    b.disabled = false;
-    if (r.ok) route();
-    else if (!r.canceled) toast('Operazione non riuscita');
-  };
-}
-
-function route() {
-  applyTheme();
-  if (gateState() === 'ok') renderApp();
-  else renderGate(gateState());
-}
-
 let booted = false;
 export function startUI() {
-  if (!booted) {
-    subscribe(() => route());
-    subscribeMeta(refreshMetaBadge);      // aggiorna il badge a ogni snapshot/backup
-    setInterval(refreshMetaBadge, 30000); // rinfresca le etichette (es. passaggio di giorno)
-    booted = true;
-  }
-  route();
+  if (!booted) { subscribe(() => renderApp()); onSaveStatus(refreshSaveBadge); booted = true; }
+  renderApp();
 }

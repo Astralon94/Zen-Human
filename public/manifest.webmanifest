@@ -1,7 +1,7 @@
 {
   "name": "Zen Human",
   "short_name": "Zen Human",
-  "description": "Presenze, assenze e prospetto buste paga, offline-first e 100% locale",
+  "description": "Presenze, assenze e prospetto buste paga · database locale (server)",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
