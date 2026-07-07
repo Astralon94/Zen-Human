@@ -1,6 +1,6 @@
 {
   "name": "zen-human-server",
-  "version": "0.1.0",
+  "version": "0.2.4",
   "private": true,
   "type": "module",
   "description": "Zen-Human (server) — Node http + node:sqlite, zero dipendenze. Sperimentazione migrazione da FSA a DB relazionale.",
