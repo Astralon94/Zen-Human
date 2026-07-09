@@ -7,9 +7,10 @@ import { openSheet, closeSheet, confirmDialog, toast } from '../dom.js';
 
 // Sezione HTML da incorporare nelle Impostazioni
 export function companiesSection() {
-  let h = `<div class="section-title">Aziende<span class="grow"></span><button class="btn sm primary" data-newco>+ Nuova</button></div>`;
+  const canCrea = can('aziende.crea');
+  let h = `<div class="section-title">Aziende<span class="grow"></span>${canCrea ? '<button class="btn sm primary" data-newco>+ Nuova</button>' : ''}</div>`;
   if (!data.companies.length) {
-    h += `<div class="card empty">Nessuna azienda.<br><button class="btn primary sm" data-newco style="margin-top:10px">Crea la prima</button></div>`;
+    h += `<div class="card empty">Nessuna azienda.${canCrea ? '<br><button class="btn primary sm" data-newco style="margin-top:10px">Crea la prima</button>' : ''}</div>`;
     return h;
   }
   h += `<div class="list">${data.companies.map(rowHtml).join('')}</div>`;
@@ -32,10 +33,13 @@ export function bindCompanies(root) {
 }
 
 function editSheet(id) {
-  if (!can('aziende.manage')) return;   // difesa: la sezione è già gated in Impostazioni
   const c = id ? data.companies.find(x => x.id === id) : null;
+  // crea su azienda nuova; modifica/elimina su azienda esistente
+  const w = c ? can('aziende.modifica') : can('aziende.crea');   // può salvare i campi
+  const canDelC = !!c && can('aziende.elimina');                 // può eliminare
+  if (!w && !canDelC) return;   // difesa: nessuna azione consentita
   openSheet(`
-    <h2>${c ? 'Modifica azienda' : 'Nuova azienda'}</h2>
+    <h2>${c ? (w ? 'Modifica azienda' : 'Dettaglio azienda') : 'Nuova azienda'}</h2>
     <div class="frow">
       <div class="field" style="max-width:90px"><label>Emoji</label><input id="f_emoji" value="${esc(c?.emoji || '🏢')}" maxlength="4"></div>
       <div class="field"><label>Nome *</label><input id="f_name" value="${esc(c?.name || '')}" placeholder="Ragione sociale"></div>
@@ -46,12 +50,13 @@ function editSheet(id) {
     </div>
     <div class="field"><label>Note</label><textarea id="f_note" rows="2">${esc(c?.note || '')}</textarea></div>
     <div class="actions">
-      ${c ? '<button class="btn danger" data-del>Elimina</button>' : ''}
-      <button class="btn" data-cancel>Annulla</button>
-      <button class="btn primary" data-save>Salva</button>
+      ${canDelC ? '<button class="btn danger" data-del>Elimina</button>' : ''}
+      <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
+      ${w ? '<button class="btn primary" data-save>Salva</button>' : ''}
     </div>`, sheet => {
+    if (!w) sheet.querySelectorAll('input, textarea').forEach(el => { el.disabled = true; });
     sheet.querySelector('[data-cancel]').onclick = closeSheet;
-    sheet.querySelector('[data-save]').onclick = () => {
+    sheet.querySelector('[data-save]')?.addEventListener('click', () => {
       const name = sheet.querySelector('#f_name').value.trim();
       if (!name) { toast('Inserisci il nome'); return; }
       const obj = {
@@ -68,7 +73,7 @@ function editSheet(id) {
         if (!data.settings.activeCompany) data.settings.activeCompany = nc.id;
       }
       save(); closeSheet(); toast('Azienda salvata ✓');
-    };
+    });
     const del = sheet.querySelector('[data-del]');
     if (del) del.onclick = () => {
       const n = companyEmployees(c.id, { includeInactive: true }).length;

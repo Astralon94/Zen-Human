@@ -28,11 +28,11 @@ export function render() {
 
 // ---------- ELENCO ----------
 function renderList(cid) {
-  const canDip = can('dipendenti.manage');
+  const canCrea = can('dipendenti.crea');
   const list = companyEmployees(cid, { includeInactive: true });
   let h = `<div class="pagehead"><h1>Dipendenti</h1><span class="sub">${esc((co(cid)?.emoji || '') + ' ' + co(cid)?.name)}</span><span class="grow"></span>
-    ${canDip ? '<button class="btn primary" data-new>+ Nuovo dipendente</button>' : ''}</div>`;
-  if (!list.length) { h += `<div class="card empty">Nessun dipendente.${canDip ? '<br><button class="btn primary sm" data-new style="margin-top:10px">Aggiungi il primo</button>' : ''}</div>`; return h; }
+    ${canCrea ? '<button class="btn primary" data-new>+ Nuovo dipendente</button>' : ''}</div>`;
+  if (!list.length) { h += `<div class="card empty">Nessun dipendente.${canCrea ? '<br><button class="btn primary sm" data-new style="margin-top:10px">Aggiungi il primo</button>' : ''}</div>`; return h; }
   h += `<div class="list">${list.map(e => {
     const net = monthlyNet(e, month).net;
     const inactive = e.active === false;
@@ -78,12 +78,13 @@ function contractPeriod(e) {
 
 // ---------- SCHEDA DIPENDENTE ----------
 function renderDetail(e) {
-  const canDip = can('dipendenti.manage');
-  const canVoci = can('voci.manage');
+  const canEditEmp = can('dipendenti.modifica') || can('dipendenti.elimina');   // la scheda modifica ospita anche l'elimina
+  const canVoci = can('voci.crea');
+  if (!can('presenze.crea') && !can('presenze.elimina')) brush = null;   // niente pennello: il tocco apre la scheda del giorno
   let h = `<div class="pagehead">
     <button class="btn sm" data-back>‹ Dipendenti</button>
     <span class="grow"></span>
-    ${canDip ? '<button class="btn sm" data-editemp>Modifica</button>' : ''}
+    ${canEditEmp ? '<button class="btn sm" data-editemp>Modifica</button>' : ''}
   </div>`;
 
   h += `<div class="card" style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
@@ -132,7 +133,7 @@ function renderDetail(e) {
   }).join('')}</div>`;
 
   // prestiti
-  h += `<div class="section-title">Prestiti rateizzati<span class="grow"></span>${canDip ? '<button class="btn sm" data-newloan>+ Prestito</button>' : ''}</div>`;
+  h += `<div class="section-title">Prestiti rateizzati<span class="grow"></span>${can('prestiti.crea') ? '<button class="btn sm" data-newloan>+ Prestito</button>' : ''}</div>`;
   const loans = e.loans || [];
   if (!loans.length) h += `<div class="card empty">Nessun prestito attivo.</div>`;
   else h += loans.map(l => {
@@ -172,7 +173,7 @@ function netInner(e) {
       ${n.absences ? `<tr><td>Trattenute assenze</td><td class="r tnum neg">− ${fmt(n.absences)}</td></tr>` : ''}
       <tr class="tot"><td>Netto da pagare</td><td class="r tnum">${fmt(n.net)}</td></tr>
     </table>
-    ${can('dipendenti.manage') ? '<div class="btnrow" style="margin-top:12px"><button class="btn sm" data-salary>Stipendio pattuito…</button></div>' : ''}`;
+    ${(can('stipendi.crea') || can('stipendi.elimina')) ? '<div class="btnrow" style="margin-top:12px"><button class="btn sm" data-salary>Stipendio pattuito…</button></div>' : ''}`;
 }
 
 function statsText(e) {
@@ -180,16 +181,17 @@ function statsText(e) {
   return `${st.worked} lavorati · ${st.absences} assenze`;
 }
 
-// barra di compilazione rapida (pennello) — solo con permesso presenze
+// barra di compilazione rapida (pennello): stati con presenze.crea, gomma con presenze.elimina
 function brushBar() {
-  if (!can('presenze.manage')) return '';
+  const canCrea = can('presenze.crea'), canDel = can('presenze.elimina');
+  if (!canCrea && !canDel) return '';
   const b = (key, label, title) => `<button class="chip ${(brush || '') === key ? 'on' : ''}" data-brush="${key}" title="${esc(title)}">${label}</button>`;
   return `<div class="card" id="d_brush" style="margin-bottom:8px">
     <div class="muted" style="font-size:12.5px;margin-bottom:8px">Compilazione rapida: scegli uno stato e tocca i giorni. In <b>Dettaglio</b> il tocco apre la scheda del giorno (importi e note).</div>
     <div class="chips" style="margin:0">
       ${b('', '✏️ Dettaglio', 'Dettaglio: apre la scheda del giorno')}
-      ${STATUS_ORDER.map(k => b(k, `${STATUSES[k].emoji} ${STATUSES[k].short}`, STATUSES[k].label)).join('')}
-      ${b('__erase', '🧽 Gomma', 'Svuota il giorno')}
+      ${canCrea ? STATUS_ORDER.map(k => b(k, `${STATUSES[k].emoji} ${STATUSES[k].short}`, STATUSES[k].label)).join('') : ''}
+      ${canDel ? b('__erase', '🧽 Gomma', 'Svuota il giorno') : ''}
     </div>
   </div>`;
 }
@@ -270,7 +272,8 @@ function setCalCursor(root) {
 
 // applica lo stato del pennello a un giorno, aggiornando in-place (niente salto scroll)
 function paintDay(e, ds) {
-  if (!can('presenze.manage')) return;
+  // gomma = eliminazione; stato = compilazione (crea)
+  if (brush === '__erase' ? !can('presenze.elimina') : !can('presenze.crea')) return;
   const ex = data.attendance.find(a => a.employeeId === e.id && a.date === ds);
   if (brush === '__erase') {
     if (ex) data.attendance = data.attendance.filter(a => a !== ex);
@@ -302,11 +305,13 @@ function rerender() {
 
 // ---------- SHEETS ----------
 function empSheet(e) {
-  if (!can('dipendenti.manage')) return;   // difesa: azione riservata
+  const w = e ? can('dipendenti.modifica') : can('dipendenti.crea');   // può salvare i campi
+  const canDelEmp = !!e && can('dipendenti.elimina');                  // può eliminare
+  if (!w && !canDelEmp) return;   // difesa: nessuna azione consentita
   const cid = activeCompany();
   const colors = ['#4f8a76', '#5b83a6', '#8b7fa8', '#c2685f', '#c98a52', '#5a9aa0', '#b97fa0', '#7f9e6a'];
   openSheet(`
-    <h2>${e ? 'Modifica dipendente' : 'Nuovo dipendente'}</h2>
+    <h2>${e ? (w ? 'Modifica dipendente' : 'Dettaglio dipendente') : 'Nuovo dipendente'}</h2>
     <div class="frow">
       <div class="field"><label>Nome *</label><input id="f_first" value="${esc(e?.firstName || '')}"></div>
       <div class="field"><label>Cognome *</label><input id="f_last" value="${esc(e?.lastName || '')}"></div>
@@ -324,11 +329,12 @@ function empSheet(e) {
     <div class="field"><label>Colore</label><div class="btnrow" id="f_colors">${colors.map(c => `<button data-color="${c}" style="width:26px;height:26px;border-radius:50%;background:${c};border:2px solid ${(e?.color || '#4f8a76') === c ? 'var(--txt)' : 'transparent'}"></button>`).join('')}</div></div>
     ${e ? `<div class="field"><label>Stato</label><select id="f_active"><option value="1" ${e.active !== false ? 'selected' : ''}>Attivo</option><option value="0" ${e.active === false ? 'selected' : ''}>Cessato</option></select></div>` : ''}
     <div class="actions">
-      ${e ? '<button class="btn danger" data-del>Elimina</button>' : ''}
-      <button class="btn" data-cancel>Annulla</button>
-      <button class="btn primary" data-save>Salva</button>
+      ${canDelEmp ? '<button class="btn danger" data-del>Elimina</button>' : ''}
+      <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
+      ${w ? '<button class="btn primary" data-save>Salva</button>' : ''}
     </div>`, sheet => {
     let color = e?.color || '#4f8a76';
+    if (!w) sheet.querySelectorAll('input, select, textarea, [data-color]').forEach(el => { el.disabled = true; el.style.pointerEvents = 'none'; });
     sheet.querySelectorAll('[data-color]').forEach(b => b.onclick = () => {
       color = b.dataset.color;
       sheet.querySelectorAll('[data-color]').forEach(x => x.style.borderColor = 'transparent');
@@ -336,10 +342,10 @@ function empSheet(e) {
     });
     // "Tempo indeterminato": disabilita e svuota la scadenza
     const copen = sheet.querySelector('#f_copen'), cend = sheet.querySelector('#f_cend');
-    const syncCend = () => { cend.disabled = copen.checked; if (copen.checked) cend.value = ''; cend.style.opacity = copen.checked ? '.5' : '1'; };
+    const syncCend = () => { cend.disabled = copen.checked || !w; if (copen.checked) cend.value = ''; cend.style.opacity = copen.checked ? '.5' : '1'; };
     copen.onchange = syncCend; syncCend();
     sheet.querySelector('[data-cancel]').onclick = closeSheet;
-    sheet.querySelector('[data-save]').onclick = () => {
+    sheet.querySelector('[data-save]')?.addEventListener('click', () => {
       const first = sheet.querySelector('#f_first').value.trim();
       const last = sheet.querySelector('#f_last').value.trim();
       if (!first && !last) { toast('Inserisci nome o cognome'); return; }
@@ -363,7 +369,7 @@ function empSheet(e) {
         selectedId = ne.id;
       }
       save(); closeSheet(); rerender(); toast('Dipendente salvato ✓');
-    };
+    });
     const del = sheet.querySelector('[data-del]');
     if (del) del.onclick = () => confirmDialog('Eliminare il dipendente?', 'Verranno rimosse anche tutte le presenze e voci collegate.', 'Elimina', () => {
       data.employees = data.employees.filter(x => x.id !== e.id);
@@ -376,21 +382,23 @@ function empSheet(e) {
 }
 
 function salarySheet(e) {
-  if (!can('dipendenti.manage')) return;   // difesa: azione riservata
+  const canSet = can('stipendi.crea');       // impostare il netto pattuito
+  const canDelSal = can('stipendi.elimina');  // eliminare voci dello storico
+  if (!canSet && !canDelSal) return;   // difesa: nessuna azione consentita
   const cur = salaryFor(e, month);
   const hist = (e.salaries || []).slice().sort((a, b) => b.month.localeCompare(a.month));
   openSheet(`
     <h2>Stipendio netto pattuito</h2>
     <div class="sheetsub">Imposta il netto valido <b>da</b> ${esc(fmtMonth(month))} in poi (storicizzato). I mesi precedenti mantengono il valore già impostato.</div>
-    <div class="field"><label>Netto pattuito da ${esc(fmtMonth(month))}</label><input id="f_net" inputmode="decimal" value="${cur ? fmtNum(cur) : ''}" placeholder="0,00"></div>
-    ${hist.length ? `<div class="section-title" style="margin-top:6px">Storico</div><div class="list">${hist.map(s => `<div class="row"><div class="mid"><div class="t1">${esc(fmtMonth(s.month))}</div></div><div class="amt tnum">${fmt(s.net)}</div><button class="btn sm danger" data-delsal="${s.month}">✕</button></div>`).join('')}</div>` : ''}
-    <div class="actions"><button class="btn" data-cancel>Annulla</button><button class="btn primary" data-save>Salva</button></div>`, sheet => {
+    <div class="field"><label>Netto pattuito da ${esc(fmtMonth(month))}</label><input id="f_net" inputmode="decimal" value="${cur ? fmtNum(cur) : ''}" placeholder="0,00" ${canSet ? '' : 'disabled'}></div>
+    ${hist.length ? `<div class="section-title" style="margin-top:6px">Storico</div><div class="list">${hist.map(s => `<div class="row"><div class="mid"><div class="t1">${esc(fmtMonth(s.month))}</div></div><div class="amt tnum">${fmt(s.net)}</div>${canDelSal ? `<button class="btn sm danger" data-delsal="${s.month}">✕</button>` : ''}</div>`).join('')}</div>` : ''}
+    <div class="actions"><button class="btn" data-cancel>${canSet ? 'Annulla' : 'Chiudi'}</button>${canSet ? '<button class="btn primary" data-save>Salva</button>' : ''}</div>`, sheet => {
     sheet.querySelector('[data-cancel]').onclick = closeSheet;
-    sheet.querySelector('[data-save]').onclick = () => {
+    sheet.querySelector('[data-save]')?.addEventListener('click', () => {
       const v = parseAmount(sheet.querySelector('#f_net').value);
       if (v == null) { toast('Importo non valido'); return; }
       setSalary(e, month, v); save(); closeSheet(); rerender(); toast('Stipendio aggiornato ✓');
-    };
+    });
     sheet.querySelectorAll('[data-delsal]').forEach(b => b.onclick = () => {
       e.salaries = e.salaries.filter(s => s.month !== b.dataset.delsal); save(); salarySheet(e);
     });
@@ -399,7 +407,8 @@ function salarySheet(e) {
 
 function daySheet(e, ds) {
   const cell = attendanceCell(e, ds);
-  const w = can('presenze.manage');
+  const w = cell ? can('presenze.modifica') : can('presenze.crea');   // salva: modifica su giornata esistente, crea su giornata nuova
+  const canClear = !!cell && can('presenze.elimina');                 // svuota giornata
   const auto = Math.round(salaryFor(e, month) / 26 * 100) / 100; // trattenuta automatica permesso non retrib.
   openSheet(`
     <h2>${fmtDateFull(ds)}</h2>
@@ -422,7 +431,7 @@ function daySheet(e, ds) {
     </div>
     <div class="field"><label>Nota</label><input id="f_note" value="${esc(cell?.note || '')}"></div>
     <div class="actions">
-      ${cell && w ? '<button class="btn danger" data-clear>Svuota</button>' : ''}
+      ${canClear ? '<button class="btn danger" data-clear>Svuota</button>' : ''}
       <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
       ${w ? '<button class="btn primary" data-save>Salva</button>' : ''}
     </div>`, sheet => {
@@ -470,8 +479,9 @@ function daySheet(e, ds) {
 }
 
 function entrySheet(e, id) {
-  const w = can('voci.manage');
   const x = id ? data.entries.find(z => z.id === id) : null;
+  const w = x ? can('voci.modifica') : can('voci.crea');   // salva: modifica su voce esistente, crea su voce nuova
+  const canDelV = !!x && can('voci.elimina');               // elimina voce
   openSheet(`
     <h2>${x ? (w ? 'Modifica voce' : 'Dettaglio voce') : 'Nuova voce'}</h2>
     <div class="field"><label>Tipo</label><select id="f_kind">${Object.entries(ENTRY_KINDS).map(([k, v]) => `<option value="${k}" ${x?.kind === k ? 'selected' : ''}>${v.emoji} ${esc(v.label)}</option>`).join('')}</select></div>
@@ -481,7 +491,7 @@ function entrySheet(e, id) {
     </div>
     <div class="field"><label>Descrizione</label><input id="f_desc" value="${esc(x?.desc || '')}" placeholder="Opzionale"></div>
     <div class="actions">
-      ${x && w ? '<button class="btn danger" data-del>Elimina</button>' : ''}
+      ${canDelV ? '<button class="btn danger" data-del>Elimina</button>' : ''}
       <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
       ${w ? '<button class="btn primary" data-save>Salva</button>' : ''}
     </div>`, sheet => {
@@ -502,7 +512,7 @@ function entrySheet(e, id) {
 }
 
 function loanSheet(e, id) {
-  if (!can('dipendenti.manage')) return;   // difesa: azione riservata
+  if (!can('prestiti.crea')) return;   // difesa: azione riservata
   openSheet(`
     <h2>Nuovo prestito</h2>
     <div class="sheetsub">Inserisci totale, numero rate e mese della prima rata: il piano viene generato in automatico (potrai poi modificare o saltare le singole rate).</div>
@@ -538,7 +548,8 @@ function loanSheet(e, id) {
 function loanDetailSheet(e, id) {
   const l = (e.loans || []).find(x => x.id === id);
   if (!l) return;
-  const w = can('dipendenti.manage');
+  const w = can('prestiti.modifica');     // segnare rate pagate/saltate
+  const canDelL = can('prestiti.elimina'); // eliminare il prestito
   openSheet(`
     <h2>🏦 ${esc(l.name)}</h2>
     <div class="sheetsub">Residuo ${fmt(loanResiduo(l))} · pagato ${fmt(loanPaid(l))} di ${fmt(loanPaid(l) + loanResiduo(l))}${l.notes ? ' · ' + esc(l.notes) : ''}</div>
@@ -549,7 +560,7 @@ function loanDetailSheet(e, id) {
       ${w ? `<button class="btn sm" data-pay="${r.n}">${r.status === 'paid' ? '↩︎' : '✓'}</button>
       <button class="btn sm" data-skip="${r.n}">${r.skipped ? '↩︎' : '⏭'}</button>` : ''}
     </div>`).join('')}</div>
-    <div class="actions">${w ? '<button class="btn danger" data-del>Elimina prestito</button>' : ''}<button class="btn primary" data-close>Chiudi</button></div>`, sheet => {
+    <div class="actions">${canDelL ? '<button class="btn danger" data-del>Elimina prestito</button>' : ''}<button class="btn primary" data-close>Chiudi</button></div>`, sheet => {
     sheet.querySelector('[data-close]').onclick = () => { closeSheet(); rerender(); };
     sheet.querySelectorAll('[data-pay]').forEach(b => b.onclick = () => { const r = l.plan.find(x => x.n == b.dataset.pay); r.status = r.status === 'paid' ? 'pending' : 'paid'; save(); loanDetailSheet(e, id); });
     sheet.querySelectorAll('[data-skip]').forEach(b => b.onclick = () => { const r = l.plan.find(x => x.n == b.dataset.skip); r.skipped = !r.skipped; save(); loanDetailSheet(e, id); });

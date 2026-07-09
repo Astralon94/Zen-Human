@@ -16,8 +16,10 @@ let brush = null; // null = Dettaglio; '__erase' = gomma; altrimenti chiave stat
 export function render() {
   const cid = activeCompany();
   if (!cid) return `<div class="pagehead"><h1>Compilazione</h1></div><div class="card empty">Crea prima un'azienda dalla sezione Aziende.</div>`;
-  const canWrite = can('presenze.manage');
-  if (!canWrite) brush = null;   // sola lettura: nessun pennello, il tocco apre la scheda in lettura
+  const canCrea = can('presenze.crea');       // pennello stati + salva su cella nuova
+  const canDel = can('presenze.elimina');      // gomma / svuota cella
+  const canPaint = canCrea || canDel;          // barra pennello visibile
+  if (!canPaint) brush = null;   // niente pennello: il tocco apre la scheda del giorno (lettura o modifica)
   const month = getMonth();
   const emps = companyEmployees(cid);
 
@@ -31,15 +33,15 @@ export function render() {
 
   if (!emps.length) { h += `<div class="card empty">Nessun dipendente attivo in questa azienda.</div>`; return h; }
 
-  // barra pennello (solo con permesso di compilazione)
-  if (canWrite) {
+  // barra pennello (stati solo con presenze.crea, gomma solo con presenze.elimina)
+  if (canPaint) {
     const b = (key, label, title) => `<button class="chip ${(brush || '') === key ? 'on' : ''}" data-brush="${key}" title="${esc(title)}">${label}</button>`;
     h += `<div class="card" style="margin-bottom:8px">
       <div class="muted" style="font-size:12.5px;margin-bottom:8px">Scegli uno stato e tocca le celle per compilarle. In <b>Dettaglio</b> il tocco apre la scheda del singolo giorno (importi e note).</div>
       <div class="chips" style="margin:0">
         ${b('', '✏️ Dettaglio', 'Dettaglio: apre la scheda del giorno')}
-        ${STATUS_ORDER.map(k => b(k, `${STATUSES[k].emoji} ${STATUSES[k].short}`, STATUSES[k].label)).join('')}
-        ${b('__erase', '🧽 Gomma', 'Svuota la cella')}
+        ${canCrea ? STATUS_ORDER.map(k => b(k, `${STATUSES[k].emoji} ${STATUSES[k].short}`, STATUSES[k].label)).join('') : ''}
+        ${canDel ? b('__erase', '🧽 Gomma', 'Svuota la cella') : ''}
       </div>
     </div>`;
   }
@@ -111,7 +113,8 @@ function bindCells(root) {
 }
 
 function paintCell(e, ds, td) {
-  if (!can('presenze.manage')) return;
+  // gomma = eliminazione; stato = compilazione (crea)
+  if (brush === '__erase' ? !can('presenze.elimina') : !can('presenze.crea')) return;
   const month = getMonth();
   const ex = data.attendance.find(a => a.employeeId === e.id && a.date === ds);
   if (brush === '__erase') {
@@ -142,7 +145,8 @@ function updateNetto(e, month) {
 // editor compatto del singolo giorno (modalità Dettaglio)
 function dayEditor(e, ds, td) {
   const cell = attendanceCell(e, ds);
-  const w = can('presenze.manage');
+  const w = cell ? can('presenze.modifica') : can('presenze.crea');   // salva: modifica su cella esistente, crea su cella nuova
+  const canClear = !!cell && can('presenze.elimina');                  // svuota cella
   const auto = Math.round(salaryFor(e, getMonth()) / 26 * 100) / 100;
   openSheet(`
     <h2>${esc(fullName(e))}</h2>
@@ -165,7 +169,7 @@ function dayEditor(e, ds, td) {
     </div>
     <div class="field"><label>Nota</label><input id="f_note" value="${esc(cell?.note || '')}"></div>
     <div class="actions">
-      ${cell && w ? '<button class="btn danger" data-clear>Svuota</button>' : ''}
+      ${canClear ? '<button class="btn danger" data-clear>Svuota</button>' : ''}
       <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
       ${w ? '<button class="btn primary" data-save>Salva</button>' : ''}
     </div>`, sheet => {

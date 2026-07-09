@@ -1,5 +1,6 @@
 // ============ Vista Riepilogo: prospetto mensile per il consulente del lavoro ============
 import { data } from '../../state/store.js';
+import { can } from '../../state/auth.js';
 import { STATUS_ORDER, STATUSES } from '../../state/model.js';
 import { esc, fmt, fmtNum, fmtMonth, shiftMonth, fullName, daysInMonth, weekdayMon0, pad2, GIORNI, round2, thisMonth, MESI } from '../../domain/util.js';
 import { activeCompany, co, companyEmployees, monthlyNet, attendanceStats, attendanceCell, statusInfo, nettoConsulente } from '../../domain/payroll.js';
@@ -35,9 +36,9 @@ export function render() {
   </div>`;
 
   h += `<div class="section-title">Presenze / assenze<span class="grow"></span>
-    <button class="btn sm primary" data-pdfcons>PDF consulente</button>
+    ${can('riepilogo.esporta') ? `<button class="btn sm primary" data-pdfcons>PDF consulente</button>
     <button class="btn sm" data-pdf>PDF interno</button>
-    <button class="btn sm" data-csv>CSV</button></div>`;
+    <button class="btn sm" data-csv>CSV</button>` : ''}</div>`;
 
   h += `<div class="list" style="overflow-x:auto"><table class="tbl">
     <thead><tr><th>Dipendente</th><th class="r">Lav.</th>${COLS.map(k => `<th class="r" title="${esc(STATUSES[k].label)}">${STATUSES[k].short}</th>`).join('')}<th class="r">Netto</th></tr></thead>

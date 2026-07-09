@@ -7,11 +7,16 @@ import { toast, confirmDialog } from '../dom.js';
 import { applyTheme } from '../app.js';
 import { companiesSection, bindCompanies } from './aziende.js';
 
+// Ha almeno un permesso sulle aziende (la sezione Aziende vive qui dentro).
+const canAziende = () => can('aziende.crea') || can('aziende.modifica') || can('aziende.elimina');
+
 export function render() {
-  const cManage = can('impostazioni.manage');   // aspetto + aggiornamento software
-  const cExport = can('dati.export');            // esporta backup
-  const cImport = can('dati.import');            // importa/sostituisci + azzera
-  const cAziende = can('aziende.manage');        // gestione aziende
+  const cAspetto = can('impostazioni.manage');   // aspetto (tema)
+  const cSoftware = can('software.aggiorna');     // aggiornamento software
+  const cExport = can('dati.export');             // esporta backup
+  const cImport = can('dati.import');             // importa/sostituisci
+  const cReset = can('dati.reset');               // azzera tutti i dati
+  const cAziende = canAziende();                  // gestione aziende
   const t = data.settings.theme || 'auto';
   const opt = (v, l) => `<button class="chip ${t === v ? 'on' : ''}" data-th="${v}">${l}</button>`;
   let h = `<div class="pagehead"><h1>Impostazioni</h1></div>`;
@@ -20,7 +25,7 @@ export function render() {
   // gestione aziende (spostata qui dal menu)
   if (cAziende) { any = true; h += companiesSection(); }
 
-  if (cManage) {
+  if (cAspetto) {
     any = true;
     h += `<div class="section-title">Aspetto</div>`;
     h += `<div class="chips">${opt('auto', 'Automatico')}${opt('light', 'Chiaro')}${opt('dark', 'Scuro')}</div>`;
@@ -49,7 +54,7 @@ export function render() {
     </table>
   </div>`;
 
-  if (cManage) {
+  if (cSoftware) {
     any = true;
     h += `<div class="section-title">Aggiornamento software</div>`;
     h += `<div class="card">
@@ -62,7 +67,7 @@ export function render() {
     </div>`;
   }
 
-  if (cImport) {
+  if (cReset) {
     any = true;
     h += `<div class="section-title">Zona pericolosa</div>`;
     h += `<div class="card"><button class="btn danger" data-wipe>Cancella tutti i dati</button></div>`;
@@ -75,7 +80,7 @@ export function render() {
 }
 
 export function bind(root) {
-  if (can('aziende.manage')) bindCompanies(root);
+  if (canAziende()) bindCompanies(root);
   root.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { data.settings.theme = b.dataset.th; save(); applyTheme(); });
   root.querySelector('[data-export]')?.addEventListener('click', () => { exportJSON(); toast('Backup esportato ✓'); });
   const impFile = root.querySelector('#imp_file');

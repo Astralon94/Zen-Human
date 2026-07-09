@@ -30,9 +30,9 @@ export function render() {
   if (!cid) return `<div class="pagehead"><h1>Voci economiche</h1></div><div class="card empty">Crea prima un'azienda dalla sezione Aziende.</div>`;
   const emps = companyEmployees(cid, { includeInactive: true });
 
-  const canWrite = can('voci.manage');
+  const canCrea = can('voci.crea');
   let h = `<div class="pagehead"><h1>Voci economiche</h1><span class="sub">${esc((co(cid)?.emoji || '') + ' ' + co(cid)?.name)}</span><span class="grow"></span>
-    ${canWrite ? `<button class="btn primary" data-new ${emps.length ? '' : 'disabled'}>+ Nuovo</button>` : ''}</div>`;
+    ${canCrea ? `<button class="btn primary" data-new ${emps.length ? '' : 'disabled'}>+ Nuovo</button>` : ''}</div>`;
 
   if (!emps.length) { h += `<div class="card empty">Nessun dipendente in questa azienda. Aggiungine uno per registrare bonus o sanzioni.</div>`; return h; }
 
@@ -74,8 +74,9 @@ function rerender() { const root = document.getElementById('view'); root.innerHT
 
 function entrySheet(id) {
   const cid = activeCompany();
-  const w = can('voci.manage');
   const x = id ? data.entries.find(z => z.id === id) : null;
+  const w = x ? can('voci.modifica') : can('voci.crea');   // salva: modifica su voce esistente, crea su voce nuova
+  const canDelV = !!x && can('voci.elimina');               // elimina voce
   const emps = companyEmployees(cid, { includeInactive: true });
   openSheet(`
     <h2>${x ? (w ? 'Modifica voce' : 'Dettaglio voce') : 'Nuovo bonus / sanzione'}</h2>
@@ -89,7 +90,7 @@ function entrySheet(id) {
     </div>
     <div class="field"><label>Descrizione</label><input id="f_desc" value="${esc(x?.desc || '')}" placeholder="Opzionale (es. motivo)"></div>
     <div class="actions">
-      ${x && w ? '<button class="btn danger" data-del>Elimina</button>' : ''}
+      ${canDelV ? '<button class="btn danger" data-del>Elimina</button>' : ''}
       <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
       ${w ? '<button class="btn primary" data-save>Salva</button>' : ''}
     </div>`, sheet => {
