@@ -1,31 +1,42 @@
 // ============ Vista Impostazioni ============
 import { data, save, setData, exportJSON, importJSON } from '../../state/store.js';
 import { DEFAULT_DATA } from '../../state/model.js';
+import { can, authFetch } from '../../state/auth.js';
 import { esc, fmtDateFull } from '../../domain/util.js';
 import { toast, confirmDialog } from '../dom.js';
 import { applyTheme } from '../app.js';
 import { companiesSection, bindCompanies } from './aziende.js';
 
 export function render() {
+  const cManage = can('impostazioni.manage');   // aspetto + aggiornamento software
+  const cExport = can('dati.export');            // esporta backup
+  const cImport = can('dati.import');            // importa/sostituisci + azzera
+  const cAziende = can('aziende.manage');        // gestione aziende
   const t = data.settings.theme || 'auto';
   const opt = (v, l) => `<button class="chip ${t === v ? 'on' : ''}" data-th="${v}">${l}</button>`;
   let h = `<div class="pagehead"><h1>Impostazioni</h1></div>`;
+  let any = false;   // qualche sezione operativa mostrata?
 
   // gestione aziende (spostata qui dal menu)
-  h += companiesSection();
+  if (cAziende) { any = true; h += companiesSection(); }
 
-  h += `<div class="section-title">Aspetto</div>`;
-  h += `<div class="chips">${opt('auto', 'Automatico')}${opt('light', 'Chiaro')}${opt('dark', 'Scuro')}</div>`;
+  if (cManage) {
+    any = true;
+    h += `<div class="section-title">Aspetto</div>`;
+    h += `<div class="chips">${opt('auto', 'Automatico')}${opt('light', 'Chiaro')}${opt('dark', 'Scuro')}</div>`;
+  }
 
-  h += `<div class="section-title">Backup</div>`;
-  h += `<div class="card">
-    <div class="muted" style="font-size:13px;margin-bottom:10px">I dati sono salvati nel <b>database locale</b> del server (con backup automatici lato server). Puoi comunque esportare o importare un backup completo in formato <b>JSON</b> — utile anche per trasferire i dati dalla vecchia versione.</div>
-    <div class="btnrow">
-      <button class="btn" data-export>Esporta backup (JSON)</button>
-      <button class="btn" data-import>Importa backup (JSON)…</button>
-      <input type="file" id="imp_file" accept="application/json,.json" style="display:none">
-    </div>
-  </div>`;
+  if (cExport || cImport) {
+    any = true;
+    h += `<div class="section-title">Backup</div>`;
+    h += `<div class="card">
+      <div class="muted" style="font-size:13px;margin-bottom:10px">I dati sono salvati nel <b>database locale</b> del server (con backup automatici lato server). Puoi comunque esportare o importare un backup completo in formato <b>JSON</b> — utile anche per trasferire i dati dalla vecchia versione.</div>
+      <div class="btnrow">
+        ${cExport ? '<button class="btn" data-export>Esporta backup (JSON)</button>' : ''}
+        ${cImport ? '<button class="btn" data-import>Importa backup (JSON)…</button><input type="file" id="imp_file" accept="application/json,.json" style="display:none">' : ''}
+      </div>
+    </div>`;
+  }
 
   h += `<div class="section-title">Archivio</div>`;
   h += `<div class="card">
@@ -38,25 +49,33 @@ export function render() {
     </table>
   </div>`;
 
-  h += `<div class="section-title">Aggiornamento software</div>`;
-  h += `<div class="card">
-    <div class="muted" style="font-size:13px;margin-bottom:10px">Gli aggiornamenti vengono scaricati da <b>GitHub</b> e installati senza toccare i dati (la cartella <b>data/</b> non viene mai modificata). Il controllo è automatico all'avvio e ogni 12 ore; al termine dell'installazione il server si riavvia da solo.</div>
-    <div class="muted" id="upd_stato" style="font-size:13px;margin-bottom:10px">Versione installata: …</div>
-    <div class="btnrow">
-      <button class="btn" data-updcheck>Controlla ora</button>
-      <button class="btn" data-updinstall style="display:none">Installa e riavvia</button>
-    </div>
-  </div>`;
+  if (cManage) {
+    any = true;
+    h += `<div class="section-title">Aggiornamento software</div>`;
+    h += `<div class="card">
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Gli aggiornamenti vengono scaricati da <b>GitHub</b> e installati senza toccare i dati (la cartella <b>data/</b> non viene mai modificata). Il controllo è automatico all'avvio e ogni 12 ore; al termine dell'installazione il server si riavvia da solo.</div>
+      <div class="muted" id="upd_stato" style="font-size:13px;margin-bottom:10px">Versione installata: …</div>
+      <div class="btnrow">
+        <button class="btn" data-updcheck>Controlla ora</button>
+        <button class="btn" data-updinstall style="display:none">Installa e riavvia</button>
+      </div>
+    </div>`;
+  }
 
-  h += `<div class="section-title">Zona pericolosa</div>`;
-  h += `<div class="card"><button class="btn danger" data-wipe>Cancella tutti i dati</button></div>`;
+  if (cImport) {
+    any = true;
+    h += `<div class="section-title">Zona pericolosa</div>`;
+    h += `<div class="card"><button class="btn danger" data-wipe>Cancella tutti i dati</button></div>`;
+  }
+
+  if (!any) h += `<div class="card empty">Non hai sezioni modificabili qui.<br><span class="muted">Contatta l'amministratore per ulteriori permessi.</span></div>`;
 
   h += `<div class="muted" style="text-align:center;font-size:12px;margin-top:24px">Zen Human · <span id="app_ver">v…</span> · server locale</div>`;
   return h;
 }
 
 export function bind(root) {
-  bindCompanies(root);
+  if (can('aziende.manage')) bindCompanies(root);
   root.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { data.settings.theme = b.dataset.th; save(); applyTheme(); });
   root.querySelector('[data-export]')?.addEventListener('click', () => { exportJSON(); toast('Backup esportato ✓'); });
   const impFile = root.querySelector('#imp_file');
@@ -83,11 +102,11 @@ export function bind(root) {
     updStato.innerHTML = txt;
     if (updInstBtn) updInstBtn.style.display = s.disponibile ? '' : 'none';
   };
-  fetch('/api/updates').then(r => r.ok ? r.json() : null).then(showUpd).catch(() => {});
+  if (updStato) authFetch('/api/updates').then(r => r.ok ? r.json() : null).then(showUpd).catch(() => {});
   if (updCheckBtn) updCheckBtn.onclick = async () => {
     updCheckBtn.disabled = true;
     try {
-      const r = await fetch('/api/updates/check', { method: 'POST' });
+      const r = await authFetch('/api/updates/check', { method: 'POST' });
       const s = await r.json();
       if (!r.ok) { toast(s.error || 'Controllo fallito'); return; }
       showUpd(s);
@@ -98,7 +117,7 @@ export function bind(root) {
   if (updInstBtn) updInstBtn.onclick = () => confirmDialog('Installare l\'aggiornamento?', 'Il nuovo software verrà scaricato e installato; il server si riavvia da solo e la pagina si ricarica. I dati non vengono toccati.', 'Installa', async () => {
     updInstBtn.disabled = true;
     try {
-      const r = await fetch('/api/updates/install', { method: 'POST' });
+      const r = await authFetch('/api/updates/install', { method: 'POST' });
       const s = await r.json();
       if (!r.ok) { toast(s.error || 'Installazione fallita'); updInstBtn.disabled = false; return; }
       toast(`Versione ${s.version} installata — riavvio in corso…`);
@@ -114,9 +133,9 @@ export function bind(root) {
     } catch { toast('Installazione fallita'); updInstBtn.disabled = false; }
   });
 
-  root.querySelector('[data-wipe]').onclick = () => confirmDialog('Cancellare tutti i dati?', 'Operazione irreversibile. Esporta prima un backup.', 'Continua', () => {
+  root.querySelector('[data-wipe]')?.addEventListener('click', () => confirmDialog('Cancellare tutti i dati?', 'Operazione irreversibile. Esporta prima un backup.', 'Continua', () => {
     confirmDialog('Sei davvero sicuro?', 'Tutte le aziende, dipendenti, presenze e voci verranno eliminati.', 'Cancella tutto', () => {
       setData(DEFAULT_DATA()); toast('Dati cancellati');
     }, { danger: true });
-  }, { danger: true });
+  }, { danger: true }));
 }

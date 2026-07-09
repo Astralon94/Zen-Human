@@ -1,6 +1,7 @@
 // ============ Shell applicativa: topbar, nav a tendina, selettore azienda, router ============
 import './styles.css';
 import { data, subscribe, save, onSaveStatus, saveStatus, reloadFromServer, forceSave } from '../state/store.js';
+import { logout, can, canSeeNav, changePassword, user, meta } from '../state/auth.js';
 import { openSheet, closeSheet, toast } from './dom.js';
 import { esc } from '../domain/util.js';
 
@@ -10,6 +11,7 @@ import * as bonusSanzioni from './views/bonus-sanzioni.js';
 import * as dipendenti from './views/dipendenti.js';
 import * as scadenze from './views/scadenze.js';
 import * as impostazioni from './views/impostazioni.js';
+import * as utenti from './views/utenti.js';
 
 const VIEWS = {
   rie: { mod: riepilogo, title: 'Riepilogo', icon: '◷' },
@@ -17,9 +19,10 @@ const VIEWS = {
   bse: { mod: bonusSanzioni, title: 'Voci economiche', icon: '➕' },
   dip: { mod: dipendenti, title: 'Dipendenti', icon: '👤' },
   sca: { mod: scadenze, title: 'Scadenze', icon: '⏳' },
+  utenti: { mod: utenti, title: 'Utenti', icon: '👥' },
   set: { mod: impostazioni, title: 'Impostazioni', icon: '⚙' }
 };
-const ORDER = ['rie', 'comp', 'bse', 'dip', 'sca', 'set'];
+const ORDER = ['rie', 'comp', 'bse', 'dip', 'sca', 'utenti', 'set'];
 
 let current = 'rie';
 let mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -32,6 +35,23 @@ export function applyTheme() {
 mql.addEventListener('change', applyTheme);
 
 export function go(view) { current = view; renderApp(); window.scrollTo(0, 0); }
+
+// ---- Gating della navigazione ----
+// Le voci visibili = quelle di ORDER accessibili all'utente secondo il registro
+// `meta.nav`. Se il registro manca (backend in bypass: auth disattivata, meta null)
+// mostriamo tutto: in quel caso non c'è multiutenza da far rispettare.
+function visibleViews() {
+  const nav = meta?.nav;
+  if (!nav || !nav.length) return ORDER.slice();
+  return ORDER.filter(k => { const n = nav.find(x => x.key === k); return n && canSeeNav(n); });
+}
+// Reindirizza `current` alla prima voce accessibile se quella corrente non lo è.
+// current = null → l'utente non ha alcuna sezione (stato vuoto gentile).
+function ensureAccessible() {
+  const vis = visibleViews();
+  if (!vis.length) { current = null; return; }
+  if (!current || !vis.includes(current)) current = vis[0];
+}
 
 function companySelect() {
   const ac = data.settings.activeCompany;
@@ -78,18 +98,57 @@ function showConflictDialog() {
 }
 
 function navMenu() {
-  const items = ORDER.map(k => {
+  const items = visibleViews().map(k => {
     const v = VIEWS[k];
     return `<button data-go="${k}" class="${current === k ? 'on' : ''}"><span class="ic">${v.icon}</span>${esc(v.title)}</button>`;
   }).join('');
+  const label = current ? VIEWS[current].title : 'Zen Human';
   return `<div class="navwrap">
-    <button class="navbtn" id="navToggle"><span>☰</span><span>${esc(VIEWS[current].title)}</span></button>
+    <button class="navbtn" id="navToggle"><span>☰</span><span>${esc(label)}</span></button>
     <div class="navmenu" id="navMenu">${items}</div>
   </div>`;
 }
 
+// Menu utente compatto in topbar: nome + ruolo, con Cambia password ed Esci.
+function userMenu() {
+  const nome = user?.nome || user?.username || 'Utente';
+  const ruolo = user ? ((meta?.ruoli && meta.ruoli[user.ruolo]) || (user.ruolo === 'admin' ? 'Amministratore' : 'Operatore')) : '';
+  return `<div class="navwrap usermenu" style="margin-left:8px">
+    <button class="navbtn" id="userToggle" title="Account"><span class="ic">👤</span><span>${esc(nome)}</span><span style="opacity:.6">▾</span></button>
+    <div class="navmenu" id="userMenu">
+      <div class="muted" style="padding:6px 11px;font-size:12px">${esc(nome)}${ruolo ? ' · ' + esc(ruolo) : ''}</div>
+      <button data-chpw><span class="ic">🔑</span>Cambia password</button>
+      <button data-logout><span class="ic">⎋</span>Esci</button>
+    </div>
+  </div>`;
+}
+
+// Sheet per il cambio password dell'utente corrente.
+function openChangePassword() {
+  openSheet(`
+    <h2>Cambia password</h2>
+    <div class="field"><label>Password attuale</label><input id="cp_old" type="password" autocomplete="current-password"></div>
+    <div class="field"><label>Nuova password</label><input id="cp_new" type="password" autocomplete="new-password"></div>
+    <div class="field"><label>Ripeti nuova password</label><input id="cp_new2" type="password" autocomplete="new-password"></div>
+    <div class="actions"><button class="btn" data-cancel>Annulla</button><button class="btn primary" data-save>Salva</button></div>`,
+    sheet => {
+      sheet.querySelector('[data-cancel]').onclick = closeSheet;
+      sheet.querySelector('[data-save]').onclick = async () => {
+        const attuale = sheet.querySelector('#cp_old').value;
+        const nuova = sheet.querySelector('#cp_new').value;
+        const nuova2 = sheet.querySelector('#cp_new2').value;
+        if (!nuova) { toast('Inserisci la nuova password'); return; }
+        if (nuova !== nuova2) { toast('Le password non coincidono'); return; }
+        const btn = sheet.querySelector('[data-save]'); btn.disabled = true;
+        try { await changePassword(attuale, nuova); closeSheet(); toast('Password aggiornata ✓'); }
+        catch (e) { toast(e.message || 'Cambio password non riuscito'); btn.disabled = false; }
+      };
+    });
+}
+
 export function renderApp() {
   applyTheme();
+  ensureAccessible();   // reindirizza se `current` non è accessibile a questo utente
   const app = document.getElementById('app');
   app.innerHTML = `
     <div class="topbar">
@@ -98,6 +157,7 @@ export function renderApp() {
       <span class="savebadge" id="saveBadge" title="Stato del salvataggio sul database" style="font-size:12px;font-weight:600;white-space:nowrap;margin-left:10px">${saveBadgeInner()}</span>
       <span class="spacer"></span>
       ${companySelect()}
+      ${userMenu()}
     </div>
     <main><div id="view" class="${current === 'comp' ? 'wide' : ''}"></div></main>`;
 
@@ -109,11 +169,25 @@ export function renderApp() {
   const sel = app.querySelector('#coSel');
   if (sel) sel.onchange = () => { data.settings.activeCompany = sel.value || null; save(); };
 
+  // menu utente: cambia password / esci
+  const uToggle = app.querySelector('#userToggle');
+  const uMenu = app.querySelector('#userMenu');
+  if (uToggle && uMenu) {
+    uToggle.onclick = e => { e.stopPropagation(); uMenu.classList.toggle('open'); };
+    uMenu.querySelector('[data-chpw]')?.addEventListener('click', () => { uMenu.classList.remove('open'); openChangePassword(); });
+    uMenu.querySelector('[data-logout]')?.addEventListener('click', async () => { uMenu.classList.remove('open'); await logout(); location.reload(); });
+  }
+
   // spia salvataggio: in conflitto è cliccabile per riaprire la scelta ricarica/forza
   const badge = app.querySelector('#saveBadge');
   if (badge) { badge.style.cursor = 'pointer'; badge.onclick = () => { if (saveStatus() === 'conflict') showConflictDialog(); }; }
 
+  // view (o stato vuoto se l'utente non ha alcuna sezione accessibile)
   const root = app.querySelector('#view');
+  if (!current) {
+    root.innerHTML = `<div class="card empty" style="margin-top:40px">Nessuna sezione disponibile.<br><span class="muted">Contatta l'amministratore per farti assegnare i permessi.</span></div>`;
+    return;
+  }
   const v = VIEWS[current].mod;
   root.innerHTML = v.render();
   if (v.bind) v.bind(root);

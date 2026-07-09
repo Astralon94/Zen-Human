@@ -1,5 +1,6 @@
 // ============ Gestione Aziende (sezione dentro Impostazioni) ============
 import { data, save } from '../../state/store.js';
+import { can } from '../../state/auth.js';
 import { esc, uid } from '../../domain/util.js';
 import { companyEmployees } from '../../domain/payroll.js';
 import { openSheet, closeSheet, confirmDialog, toast } from '../dom.js';
@@ -31,6 +32,7 @@ export function bindCompanies(root) {
 }
 
 function editSheet(id) {
+  if (!can('aziende.manage')) return;   // difesa: la sezione è già gated in Impostazioni
   const c = id ? data.companies.find(x => x.id === id) : null;
   openSheet(`
     <h2>${c ? 'Modifica azienda' : 'Nuova azienda'}</h2>

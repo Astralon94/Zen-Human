@@ -1,6 +1,6 @@
 {
   "name": "zen-human-server",
-  "version": "0.2.7",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Zen-Human (server) — Node http + node:sqlite, zero dipendenze. Sperimentazione migrazione da FSA a DB relazionale.",
@@ -9,6 +9,7 @@
     "build": "vite build && cp dist/index.html public/index.html",
     "dev": "vite",
     "reset-db": "node scripts/reset.mjs",
+    "reset-admin": "node scripts/reset-admin.mjs",
     "test:roundtrip": "node scripts/roundtrip.mjs"
   },
   "devDependencies": {

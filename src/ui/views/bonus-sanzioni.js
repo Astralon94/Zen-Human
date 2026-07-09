@@ -2,6 +2,7 @@
 // Gestisce le voci economiche di tipo "bonus" e "sanction", collegate alle schede dipendenti
 // (sono le stesse `data.entries` che compaiono nelle "Voci del mese" del dipendente).
 import { data, save } from '../../state/store.js';
+import { can } from '../../state/auth.js';
 import { ENTRY_KINDS } from '../../state/model.js';
 import { esc, uid, fmt, fmtNum, parseAmount, fullName, fmtDateFull, todayStr, pad2, round2 } from '../../domain/util.js';
 import { activeCompany, co, emp, companyEmployees, entryInfo } from '../../domain/payroll.js';
@@ -29,8 +30,9 @@ export function render() {
   if (!cid) return `<div class="pagehead"><h1>Voci economiche</h1></div><div class="card empty">Crea prima un'azienda dalla sezione Aziende.</div>`;
   const emps = companyEmployees(cid, { includeInactive: true });
 
+  const canWrite = can('voci.manage');
   let h = `<div class="pagehead"><h1>Voci economiche</h1><span class="sub">${esc((co(cid)?.emoji || '') + ' ' + co(cid)?.name)}</span><span class="grow"></span>
-    <button class="btn primary" data-new ${emps.length ? '' : 'disabled'}>+ Nuovo</button></div>`;
+    ${canWrite ? `<button class="btn primary" data-new ${emps.length ? '' : 'disabled'}>+ Nuovo</button>` : ''}</div>`;
 
   if (!emps.length) { h += `<div class="card empty">Nessun dipendente in questa azienda. Aggiungine uno per registrare bonus o sanzioni.</div>`; return h; }
 
@@ -72,10 +74,11 @@ function rerender() { const root = document.getElementById('view'); root.innerHT
 
 function entrySheet(id) {
   const cid = activeCompany();
+  const w = can('voci.manage');
   const x = id ? data.entries.find(z => z.id === id) : null;
   const emps = companyEmployees(cid, { includeInactive: true });
   openSheet(`
-    <h2>${x ? 'Modifica voce' : 'Nuovo bonus / sanzione'}</h2>
+    <h2>${x ? (w ? 'Modifica voce' : 'Dettaglio voce') : 'Nuovo bonus / sanzione'}</h2>
     <div class="field"><label>Dipendente *</label><select id="f_emp">${emps.map(e => `<option value="${e.id}" ${x?.employeeId === e.id ? 'selected' : ''}>${esc(fullName(e))}${e.active === false ? ' (cessato)' : ''}</option>`).join('')}</select></div>
     <div class="field"><label>Tipo</label><div class="chips" id="f_kind">
       ${KINDS.map(k => `<button type="button" class="chip ${ (x?.kind || 'bonus') === k ? 'on' : ''}" data-kk="${k}">${ENTRY_KINDS[k].emoji} ${esc(ENTRY_KINDS[k].label)}</button>`).join('')}
@@ -86,17 +89,18 @@ function entrySheet(id) {
     </div>
     <div class="field"><label>Descrizione</label><input id="f_desc" value="${esc(x?.desc || '')}" placeholder="Opzionale (es. motivo)"></div>
     <div class="actions">
-      ${x ? '<button class="btn danger" data-del>Elimina</button>' : ''}
-      <button class="btn" data-cancel>Annulla</button>
-      <button class="btn primary" data-save>Salva</button>
+      ${x && w ? '<button class="btn danger" data-del>Elimina</button>' : ''}
+      <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
+      ${w ? '<button class="btn primary" data-save>Salva</button>' : ''}
     </div>`, sheet => {
     let kind = x?.kind || 'bonus';
+    if (!w) sheet.querySelectorAll('input, select, textarea, #f_kind [data-kk]').forEach(el => { el.disabled = true; el.style.pointerEvents = 'none'; });
     sheet.querySelectorAll('#f_kind [data-kk]').forEach(b => b.onclick = () => {
       kind = b.dataset.kk;
       sheet.querySelectorAll('#f_kind .chip').forEach(c => c.classList.toggle('on', c.dataset.kk === kind));
     });
     sheet.querySelector('[data-cancel]').onclick = closeSheet;
-    sheet.querySelector('[data-save]').onclick = () => {
+    sheet.querySelector('[data-save]')?.addEventListener('click', () => {
       const empId = sheet.querySelector('#f_emp').value;
       if (!empId) { toast('Seleziona un dipendente'); return; }
       const amt = parseAmount(sheet.querySelector('#f_amt').value);
@@ -106,7 +110,7 @@ function entrySheet(id) {
       if (x) Object.assign(x, obj);
       else data.entries.push({ id: uid(), companyId: cid, ...obj, createdAt: Date.now() });
       save(); closeSheet(); rerender(); toast('Voce salvata ✓');
-    };
+    });
     const del = sheet.querySelector('[data-del]');
     if (del) del.onclick = () => confirmDialog('Eliminare la voce?', 'Verrà rimossa anche dalla scheda del dipendente.', 'Elimina', () => {
       data.entries = data.entries.filter(z => z.id !== x.id); save(); closeSheet(); rerender(); toast('Voce eliminata');

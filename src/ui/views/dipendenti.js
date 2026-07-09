@@ -1,5 +1,6 @@
 // ============ Vista Dipendenti: elenco + scheda completa ============
 import { data, save } from '../../state/store.js';
+import { can } from '../../state/auth.js';
 import { STATUS_ORDER, STATUSES, ENTRY_KINDS, SHIFT_ORDER, SHIFTS, shiftInfo } from '../../state/model.js';
 import {
   esc, uid, fmt, fmtNum, parseAmount, fullName, initials,
@@ -27,10 +28,11 @@ export function render() {
 
 // ---------- ELENCO ----------
 function renderList(cid) {
+  const canDip = can('dipendenti.manage');
   const list = companyEmployees(cid, { includeInactive: true });
   let h = `<div class="pagehead"><h1>Dipendenti</h1><span class="sub">${esc((co(cid)?.emoji || '') + ' ' + co(cid)?.name)}</span><span class="grow"></span>
-    <button class="btn primary" data-new>+ Nuovo dipendente</button></div>`;
-  if (!list.length) { h += `<div class="card empty">Nessun dipendente.<br><button class="btn primary sm" data-new style="margin-top:10px">Aggiungi il primo</button></div>`; return h; }
+    ${canDip ? '<button class="btn primary" data-new>+ Nuovo dipendente</button>' : ''}</div>`;
+  if (!list.length) { h += `<div class="card empty">Nessun dipendente.${canDip ? '<br><button class="btn primary sm" data-new style="margin-top:10px">Aggiungi il primo</button>' : ''}</div>`; return h; }
   h += `<div class="list">${list.map(e => {
     const net = monthlyNet(e, month).net;
     const inactive = e.active === false;
@@ -76,10 +78,12 @@ function contractPeriod(e) {
 
 // ---------- SCHEDA DIPENDENTE ----------
 function renderDetail(e) {
+  const canDip = can('dipendenti.manage');
+  const canVoci = can('voci.manage');
   let h = `<div class="pagehead">
     <button class="btn sm" data-back>‹ Dipendenti</button>
     <span class="grow"></span>
-    <button class="btn sm" data-editemp>Modifica</button>
+    ${canDip ? '<button class="btn sm" data-editemp>Modifica</button>' : ''}
   </div>`;
 
   h += `<div class="card" style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
@@ -114,7 +118,7 @@ function renderDetail(e) {
   h += legend();
 
   // voci del mese
-  h += `<div class="section-title">Voci del mese<span class="grow"></span><button class="btn sm" data-newentry>+ Voce</button></div>`;
+  h += `<div class="section-title">Voci del mese<span class="grow"></span>${canVoci ? '<button class="btn sm" data-newentry>+ Voce</button>' : ''}</div>`;
   const ents = monthEntries(e, month).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   if (!ents.length) h += `<div class="card empty">Nessun bonus, sanzione o acconto in ${esc(fmtMonth(month))}.</div>`;
   else h += `<div class="list">${ents.map(x => {
@@ -128,7 +132,7 @@ function renderDetail(e) {
   }).join('')}</div>`;
 
   // prestiti
-  h += `<div class="section-title">Prestiti rateizzati<span class="grow"></span><button class="btn sm" data-newloan>+ Prestito</button></div>`;
+  h += `<div class="section-title">Prestiti rateizzati<span class="grow"></span>${canDip ? '<button class="btn sm" data-newloan>+ Prestito</button>' : ''}</div>`;
   const loans = e.loans || [];
   if (!loans.length) h += `<div class="card empty">Nessun prestito attivo.</div>`;
   else h += loans.map(l => {
@@ -168,7 +172,7 @@ function netInner(e) {
       ${n.absences ? `<tr><td>Trattenute assenze</td><td class="r tnum neg">− ${fmt(n.absences)}</td></tr>` : ''}
       <tr class="tot"><td>Netto da pagare</td><td class="r tnum">${fmt(n.net)}</td></tr>
     </table>
-    <div class="btnrow" style="margin-top:12px"><button class="btn sm" data-salary>Stipendio pattuito…</button></div>`;
+    ${can('dipendenti.manage') ? '<div class="btnrow" style="margin-top:12px"><button class="btn sm" data-salary>Stipendio pattuito…</button></div>' : ''}`;
 }
 
 function statsText(e) {
@@ -176,8 +180,9 @@ function statsText(e) {
   return `${st.worked} lavorati · ${st.absences} assenze`;
 }
 
-// barra di compilazione rapida (pennello)
+// barra di compilazione rapida (pennello) — solo con permesso presenze
 function brushBar() {
+  if (!can('presenze.manage')) return '';
   const b = (key, label, title) => `<button class="chip ${(brush || '') === key ? 'on' : ''}" data-brush="${key}" title="${esc(title)}">${label}</button>`;
   return `<div class="card" id="d_brush" style="margin-bottom:8px">
     <div class="muted" style="font-size:12.5px;margin-bottom:8px">Compilazione rapida: scegli uno stato e tocca i giorni. In <b>Dettaglio</b> il tocco apre la scheda del giorno (importi e note).</div>
@@ -232,12 +237,12 @@ export function bind(root) {
 
 function bindDetail(root, e) {
   root.querySelector('[data-back]').onclick = () => { selectedId = null; brush = null; rerender(); };
-  root.querySelector('[data-editemp]').onclick = () => empSheet(e);
+  root.querySelector('[data-editemp]')?.addEventListener('click', () => empSheet(e));
   root.querySelector('[data-mprev]').onclick = () => { month = shiftMonth(month, -1); rerender(); };
   root.querySelector('[data-mnext]').onclick = () => { month = shiftMonth(month, 1); rerender(); };
   root.querySelector('[data-mtoday]').onclick = () => { month = thisMonth(); rerender(); };
-  root.querySelector('[data-newentry]').onclick = () => entrySheet(e, null);
-  root.querySelector('[data-newloan]').onclick = () => loanSheet(e, null);
+  root.querySelector('[data-newentry]')?.addEventListener('click', () => entrySheet(e, null));
+  root.querySelector('[data-newloan]')?.addEventListener('click', () => loanSheet(e, null));
   root.querySelectorAll('[data-entry]').forEach(b => b.onclick = () => entrySheet(e, b.dataset.entry));
   root.querySelectorAll('[data-loan]').forEach(b => b.onclick = () => loanDetailSheet(e, b.dataset.loan));
   // pennello: selezione stato
@@ -265,6 +270,7 @@ function setCalCursor(root) {
 
 // applica lo stato del pennello a un giorno, aggiornando in-place (niente salto scroll)
 function paintDay(e, ds) {
+  if (!can('presenze.manage')) return;
   const ex = data.attendance.find(a => a.employeeId === e.id && a.date === ds);
   if (brush === '__erase') {
     if (ex) data.attendance = data.attendance.filter(a => a !== ex);
@@ -296,6 +302,7 @@ function rerender() {
 
 // ---------- SHEETS ----------
 function empSheet(e) {
+  if (!can('dipendenti.manage')) return;   // difesa: azione riservata
   const cid = activeCompany();
   const colors = ['#4f8a76', '#5b83a6', '#8b7fa8', '#c2685f', '#c98a52', '#5a9aa0', '#b97fa0', '#7f9e6a'];
   openSheet(`
@@ -369,6 +376,7 @@ function empSheet(e) {
 }
 
 function salarySheet(e) {
+  if (!can('dipendenti.manage')) return;   // difesa: azione riservata
   const cur = salaryFor(e, month);
   const hist = (e.salaries || []).slice().sort((a, b) => b.month.localeCompare(a.month));
   openSheet(`
@@ -391,10 +399,11 @@ function salarySheet(e) {
 
 function daySheet(e, ds) {
   const cell = attendanceCell(e, ds);
+  const w = can('presenze.manage');
   const auto = Math.round(salaryFor(e, month) / 26 * 100) / 100; // trattenuta automatica permesso non retrib.
   openSheet(`
     <h2>${fmtDateFull(ds)}</h2>
-    <div class="sheetsub">Seleziona lo stato della giornata. Per le assenze puoi indicare un importo da scalare dal netto.</div>
+    <div class="sheetsub">${w ? 'Seleziona lo stato della giornata. Per le assenze puoi indicare un importo da scalare dal netto.' : 'Dettaglio della giornata (sola lettura).'}</div>
     <div class="stpick" id="f_status">
       ${STATUS_ORDER.map(k => { const s = STATUSES[k]; const on = cell?.status === k; return `<button data-st="${k}" class="${on ? 'on' : ''}"><span class="dot" style="background:${s.color}"></span>${s.emoji} ${esc(s.label)}</button>`; }).join('')}
     </div>
@@ -413,14 +422,15 @@ function daySheet(e, ds) {
     </div>
     <div class="field"><label>Nota</label><input id="f_note" value="${esc(cell?.note || '')}"></div>
     <div class="actions">
-      ${cell ? '<button class="btn danger" data-clear>Svuota</button>' : ''}
-      <button class="btn" data-cancel>Annulla</button>
-      <button class="btn primary" data-save>Salva</button>
+      ${cell && w ? '<button class="btn danger" data-clear>Svuota</button>' : ''}
+      <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
+      ${w ? '<button class="btn primary" data-save>Salva</button>' : ''}
     </div>`, sheet => {
     let status = cell?.status || null;
     let shift = cell?.shift || null;
     const amtwrap = sheet.querySelector('#amtwrap'), shiftwrap = sheet.querySelector('#shiftwrap');
     const nrhint = sheet.querySelector('#nrhint'), amtlbl = sheet.querySelector('#amtlbl'), amtInput = sheet.querySelector('#f_amt');
+    if (!w) sheet.querySelectorAll('input, textarea, [data-st], [data-sh]').forEach(el => { el.disabled = true; el.style.pointerEvents = 'none'; });
     const updateDyn = () => {
       const isAbs = STATUSES[status]?.kind === 'absence';
       amtwrap.style.display = isAbs ? '' : 'none';
@@ -442,7 +452,7 @@ function daySheet(e, ds) {
     });
     updateDyn();
     sheet.querySelector('[data-cancel]').onclick = closeSheet;
-    sheet.querySelector('[data-save]').onclick = () => {
+    sheet.querySelector('[data-save]')?.addEventListener('click', () => {
       if (!status) { toast('Seleziona uno stato'); return; }
       const isPresent = status === 'present';
       const amt = STATUSES[status]?.kind === 'absence' ? (parseAmount(amtInput.value) || 0) : 0;
@@ -453,16 +463,17 @@ function daySheet(e, ds) {
       if (ex) { ex.status = status; ex.amount = amt; ex.shift = sShift; ex.shiftBonus = sBonus; ex.note = note; }
       else data.attendance.push({ id: uid(), companyId: e.companyId, employeeId: e.id, date: ds, status, amount: amt, shift: sShift, shiftBonus: sBonus, note });
       save(); closeSheet(); rerender();
-    };
+    });
     const clr = sheet.querySelector('[data-clear]');
     if (clr) clr.onclick = () => { data.attendance = data.attendance.filter(a => !(a.employeeId === e.id && a.date === ds)); save(); closeSheet(); rerender(); };
   });
 }
 
 function entrySheet(e, id) {
+  const w = can('voci.manage');
   const x = id ? data.entries.find(z => z.id === id) : null;
   openSheet(`
-    <h2>${x ? 'Modifica voce' : 'Nuova voce'}</h2>
+    <h2>${x ? (w ? 'Modifica voce' : 'Dettaglio voce') : 'Nuova voce'}</h2>
     <div class="field"><label>Tipo</label><select id="f_kind">${Object.entries(ENTRY_KINDS).map(([k, v]) => `<option value="${k}" ${x?.kind === k ? 'selected' : ''}>${v.emoji} ${esc(v.label)}</option>`).join('')}</select></div>
     <div class="frow">
       <div class="field"><label>Importo *</label><input id="f_amt" inputmode="decimal" value="${x?.amount ? fmtNum(x.amount) : ''}" placeholder="0,00"></div>
@@ -470,12 +481,13 @@ function entrySheet(e, id) {
     </div>
     <div class="field"><label>Descrizione</label><input id="f_desc" value="${esc(x?.desc || '')}" placeholder="Opzionale"></div>
     <div class="actions">
-      ${x ? '<button class="btn danger" data-del>Elimina</button>' : ''}
-      <button class="btn" data-cancel>Annulla</button>
-      <button class="btn primary" data-save>Salva</button>
+      ${x && w ? '<button class="btn danger" data-del>Elimina</button>' : ''}
+      <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
+      ${w ? '<button class="btn primary" data-save>Salva</button>' : ''}
     </div>`, sheet => {
+    if (!w) sheet.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
     sheet.querySelector('[data-cancel]').onclick = closeSheet;
-    sheet.querySelector('[data-save]').onclick = () => {
+    sheet.querySelector('[data-save]')?.addEventListener('click', () => {
       const amt = parseAmount(sheet.querySelector('#f_amt').value);
       if (amt == null) { toast('Importo non valido'); return; }
       const date = sheet.querySelector('#f_date').value || todayStr();
@@ -483,13 +495,14 @@ function entrySheet(e, id) {
       if (x) Object.assign(x, obj);
       else data.entries.push({ id: uid(), companyId: e.companyId, employeeId: e.id, ...obj, createdAt: Date.now() });
       save(); closeSheet(); rerender(); toast('Voce salvata ✓');
-    };
+    });
     const del = sheet.querySelector('[data-del]');
     if (del) del.onclick = () => { data.entries = data.entries.filter(z => z.id !== x.id); save(); closeSheet(); rerender(); toast('Voce eliminata'); };
   });
 }
 
 function loanSheet(e, id) {
+  if (!can('dipendenti.manage')) return;   // difesa: azione riservata
   openSheet(`
     <h2>Nuovo prestito</h2>
     <div class="sheetsub">Inserisci totale, numero rate e mese della prima rata: il piano viene generato in automatico (potrai poi modificare o saltare le singole rate).</div>
@@ -525,6 +538,7 @@ function loanSheet(e, id) {
 function loanDetailSheet(e, id) {
   const l = (e.loans || []).find(x => x.id === id);
   if (!l) return;
+  const w = can('dipendenti.manage');
   openSheet(`
     <h2>🏦 ${esc(l.name)}</h2>
     <div class="sheetsub">Residuo ${fmt(loanResiduo(l))} · pagato ${fmt(loanPaid(l))} di ${fmt(loanPaid(l) + loanResiduo(l))}${l.notes ? ' · ' + esc(l.notes) : ''}</div>
@@ -532,16 +546,16 @@ function loanDetailSheet(e, id) {
       <div class="emoji">${r.skipped ? '⏭️' : r.status === 'paid' ? '✅' : '•'}</div>
       <div class="mid"><div class="t1">Rata ${r.n} · ${esc(fmtMonth(r.month))}</div><div class="t2">${r.skipped ? 'saltata' : r.status === 'paid' ? 'pagata' : 'da pagare'}</div></div>
       <div class="amt tnum">${fmt(r.amount)}</div>
-      <button class="btn sm" data-pay="${r.n}">${r.status === 'paid' ? '↩︎' : '✓'}</button>
-      <button class="btn sm" data-skip="${r.n}">${r.skipped ? '↩︎' : '⏭'}</button>
+      ${w ? `<button class="btn sm" data-pay="${r.n}">${r.status === 'paid' ? '↩︎' : '✓'}</button>
+      <button class="btn sm" data-skip="${r.n}">${r.skipped ? '↩︎' : '⏭'}</button>` : ''}
     </div>`).join('')}</div>
-    <div class="actions"><button class="btn danger" data-del>Elimina prestito</button><button class="btn primary" data-close>Chiudi</button></div>`, sheet => {
+    <div class="actions">${w ? '<button class="btn danger" data-del>Elimina prestito</button>' : ''}<button class="btn primary" data-close>Chiudi</button></div>`, sheet => {
     sheet.querySelector('[data-close]').onclick = () => { closeSheet(); rerender(); };
     sheet.querySelectorAll('[data-pay]').forEach(b => b.onclick = () => { const r = l.plan.find(x => x.n == b.dataset.pay); r.status = r.status === 'paid' ? 'pending' : 'paid'; save(); loanDetailSheet(e, id); });
     sheet.querySelectorAll('[data-skip]').forEach(b => b.onclick = () => { const r = l.plan.find(x => x.n == b.dataset.skip); r.skipped = !r.skipped; save(); loanDetailSheet(e, id); });
-    sheet.querySelector('[data-del]').onclick = () => confirmDialog('Eliminare il prestito?', 'L\'intero piano rate verrà rimosso.', 'Elimina', () => {
+    sheet.querySelector('[data-del]')?.addEventListener('click', () => confirmDialog('Eliminare il prestito?', 'L\'intero piano rate verrà rimosso.', 'Elimina', () => {
       e.loans = e.loans.filter(x => x.id !== id); save(); closeSheet(); rerender(); toast('Prestito eliminato');
-    }, { danger: true });
+    }, { danger: true }));
   });
 }
 

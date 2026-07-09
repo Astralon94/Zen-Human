@@ -1,6 +1,7 @@
 // ============ Vista Compilazione: matrice dipendenti × giorni ============
 // Compilazione veloce di tutto il mese e di tutti i dipendenti in un'unica griglia.
 import { data, save } from '../../state/store.js';
+import { can } from '../../state/auth.js';
 import { STATUS_ORDER, STATUSES, SHIFT_ORDER, SHIFTS } from '../../state/model.js';
 import {
   esc, uid, fmt, fmtNum, parseAmount, fullName, initials, fmtMonth, shiftMonth,
@@ -15,6 +16,8 @@ let brush = null; // null = Dettaglio; '__erase' = gomma; altrimenti chiave stat
 export function render() {
   const cid = activeCompany();
   if (!cid) return `<div class="pagehead"><h1>Compilazione</h1></div><div class="card empty">Crea prima un'azienda dalla sezione Aziende.</div>`;
+  const canWrite = can('presenze.manage');
+  if (!canWrite) brush = null;   // sola lettura: nessun pennello, il tocco apre la scheda in lettura
   const month = getMonth();
   const emps = companyEmployees(cid);
 
@@ -28,16 +31,18 @@ export function render() {
 
   if (!emps.length) { h += `<div class="card empty">Nessun dipendente attivo in questa azienda.</div>`; return h; }
 
-  // barra pennello
-  const b = (key, label, title) => `<button class="chip ${(brush || '') === key ? 'on' : ''}" data-brush="${key}" title="${esc(title)}">${label}</button>`;
-  h += `<div class="card" style="margin-bottom:8px">
-    <div class="muted" style="font-size:12.5px;margin-bottom:8px">Scegli uno stato e tocca le celle per compilarle. In <b>Dettaglio</b> il tocco apre la scheda del singolo giorno (importi e note).</div>
-    <div class="chips" style="margin:0">
-      ${b('', '✏️ Dettaglio', 'Dettaglio: apre la scheda del giorno')}
-      ${STATUS_ORDER.map(k => b(k, `${STATUSES[k].emoji} ${STATUSES[k].short}`, STATUSES[k].label)).join('')}
-      ${b('__erase', '🧽 Gomma', 'Svuota la cella')}
-    </div>
-  </div>`;
+  // barra pennello (solo con permesso di compilazione)
+  if (canWrite) {
+    const b = (key, label, title) => `<button class="chip ${(brush || '') === key ? 'on' : ''}" data-brush="${key}" title="${esc(title)}">${label}</button>`;
+    h += `<div class="card" style="margin-bottom:8px">
+      <div class="muted" style="font-size:12.5px;margin-bottom:8px">Scegli uno stato e tocca le celle per compilarle. In <b>Dettaglio</b> il tocco apre la scheda del singolo giorno (importi e note).</div>
+      <div class="chips" style="margin:0">
+        ${b('', '✏️ Dettaglio', 'Dettaglio: apre la scheda del giorno')}
+        ${STATUS_ORDER.map(k => b(k, `${STATUSES[k].emoji} ${STATUSES[k].short}`, STATUSES[k].label)).join('')}
+        ${b('__erase', '🧽 Gomma', 'Svuota la cella')}
+      </div>
+    </div>`;
+  }
 
   h += `<div class="matrix-wrap ${brush !== null ? 'painting' : ''}" id="mwrap">${matrixHTML(emps, month)}</div>`;
   h += `<div class="legend">${STATUS_ORDER.map(k => { const s = STATUSES[k]; return `<span class="tag"><i style="background:${s.color}"></i>${s.emoji} ${esc(s.label)}</span>`; }).join('')}</div>`;
@@ -106,6 +111,7 @@ function bindCells(root) {
 }
 
 function paintCell(e, ds, td) {
+  if (!can('presenze.manage')) return;
   const month = getMonth();
   const ex = data.attendance.find(a => a.employeeId === e.id && a.date === ds);
   if (brush === '__erase') {
@@ -136,10 +142,11 @@ function updateNetto(e, month) {
 // editor compatto del singolo giorno (modalità Dettaglio)
 function dayEditor(e, ds, td) {
   const cell = attendanceCell(e, ds);
+  const w = can('presenze.manage');
   const auto = Math.round(salaryFor(e, getMonth()) / 26 * 100) / 100;
   openSheet(`
     <h2>${esc(fullName(e))}</h2>
-    <div class="sheetsub">${fmtDateFull(ds)} · seleziona lo stato. Per le assenze puoi indicare un importo da scalare dal netto.</div>
+    <div class="sheetsub">${fmtDateFull(ds)} · ${w ? 'seleziona lo stato. Per le assenze puoi indicare un importo da scalare dal netto.' : 'dettaglio della giornata (sola lettura).'}</div>
     <div class="stpick">
       ${STATUS_ORDER.map(k => { const s = STATUSES[k]; const on = cell?.status === k; return `<button data-st="${k}" class="${on ? 'on' : ''}"><span class="dot" style="background:${s.color}"></span>${s.emoji} ${esc(s.label)}</button>`; }).join('')}
     </div>
@@ -158,9 +165,9 @@ function dayEditor(e, ds, td) {
     </div>
     <div class="field"><label>Nota</label><input id="f_note" value="${esc(cell?.note || '')}"></div>
     <div class="actions">
-      ${cell ? '<button class="btn danger" data-clear>Svuota</button>' : ''}
-      <button class="btn" data-cancel>Annulla</button>
-      <button class="btn primary" data-save>Salva</button>
+      ${cell && w ? '<button class="btn danger" data-clear>Svuota</button>' : ''}
+      <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
+      ${w ? '<button class="btn primary" data-save>Salva</button>' : ''}
     </div>`, sheet => {
     let status = cell?.status || null;
     let shift = cell?.shift || null;
@@ -174,6 +181,7 @@ function dayEditor(e, ds, td) {
       amtInput.placeholder = isNR ? `auto ${fmtNum(auto)}` : '0,00';
       amtlbl.textContent = isNR ? 'Importo da scalare (vuoto = automatico)' : 'Importo da scalare (opzionale)';
     };
+    if (!w) sheet.querySelectorAll('input, textarea, [data-st], [data-sh]').forEach(el => { el.disabled = true; el.style.pointerEvents = 'none'; });
     sheet.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
       status = b.dataset.st;
       sheet.querySelectorAll('[data-st]').forEach(x => x.classList.remove('on'));
@@ -186,7 +194,7 @@ function dayEditor(e, ds, td) {
     });
     updateDyn();
     sheet.querySelector('[data-cancel]').onclick = closeSheet;
-    sheet.querySelector('[data-save]').onclick = () => {
+    sheet.querySelector('[data-save]')?.addEventListener('click', () => {
       if (!status) { toast('Seleziona uno stato'); return; }
       const isPresent = status === 'present';
       const amt = STATUSES[status]?.kind === 'absence' ? (parseAmount(amtInput.value) || 0) : 0;
@@ -197,7 +205,7 @@ function dayEditor(e, ds, td) {
       if (ex) { ex.status = status; ex.amount = amt; ex.shift = sShift; ex.shiftBonus = sBonus; ex.note = note; }
       else data.attendance.push({ id: uid(), companyId: e.companyId, employeeId: e.id, date: ds, status, amount: amt, shift: sShift, shiftBonus: sBonus, note });
       save(); closeSheet(); replaceCell(td, e, ds); updateNetto(e, getMonth());
-    };
+    });
     const clr = sheet.querySelector('[data-clear]');
     if (clr) clr.onclick = () => { data.attendance = data.attendance.filter(a => !(a.employeeId === e.id && a.date === ds)); save(); closeSheet(); replaceCell(td, e, ds); updateNetto(e, getMonth()); };
   });
