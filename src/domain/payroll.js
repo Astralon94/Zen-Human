@@ -142,6 +142,43 @@ export function nettoConsulente(e, month) {
   return { spettante, anticipato, residuo: n.net, advances: n.advances, loans: n.loans };
 }
 
+// ---- Costo del lavoro (derivato) ----
+// Somma dei netti mensili dei dipendenti ATTIVI dell'azienda nel mese: è quanto il
+// titolare paga complessivamente (bonus/sanzioni/acconti/rate già confluiti nel netto).
+// Coincide con il "Netto totale" del riepilogo. Nessun valore salvato: sempre derivato.
+export function laborCost(companyId, month) {
+  return round2(companyEmployees(companyId).reduce((s, e) => s + monthlyNet(e, month).net, 0));
+}
+
+// ---- Ferie e permessi ROL residui (derivati dalle presenze, per anno) ----
+// Conta i GIORNI con stato 'ferie' e con stato 'permesso' (ROL) nell'anno indicato.
+// Il permesso NON retribuito (permesso_nr) NON scala nulla dai monti. Il residuo è
+// annuo − usato; se il monte annuo è 0 (non configurato) il residuo non va mostrato.
+export function leaveStats(e, year) {
+  const y = String(year);
+  let ferieUsed = 0, rolUsed = 0;
+  data.attendance.forEach(a => {
+    if (a.employeeId !== e.id || (a.date || '').slice(0, 4) !== y) return;
+    if (a.status === 'ferie') ferieUsed++;
+    else if (a.status === 'permesso') rolUsed++;
+  });
+  const ferieAnnue = Number(e.ferieAnnue) || 0;
+  const rolAnnui = Number(e.rolAnnui) || 0;
+  return {
+    ferieConfig: ferieAnnue > 0, rolConfig: rolAnnui > 0,
+    ferieAnnue, rolAnnui, ferieUsed, rolUsed,
+    ferieLeft: round2(ferieAnnue - ferieUsed), rolLeft: round2(rolAnnui - rolUsed),
+  };
+}
+
+// ---- Blocco del mese (chiusura) ----
+// Stato sul doc AZIENDA (lockedMonths[]): (azienda, mese) chiuso = presenze/voci di quel
+// mese non modificabili. Sui settings NO: un changeset settings-only bypassa il write-guard.
+export function isMonthLocked(companyId, month) {
+  const c = co(companyId);
+  return !!(c && Array.isArray(c.lockedMonths) && c.lockedMonths.includes(month));
+}
+
 // ---- Etichette ----
 export const statusInfo = key => STATUSES[key] || { label: key, emoji: '•', color: '#8a8a8e', kind: 'absence' };
 export const entryInfo = kind => ENTRY_KINDS[kind] || { label: kind, emoji: '•', sign: -1 };

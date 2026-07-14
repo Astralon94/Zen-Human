@@ -198,6 +198,33 @@ export function importJSON(file) {
   });
 }
 
+// ---- Allegati: binari come BLOB via API dedicata ----
+// I metadati (id,name,size,type,addedAt) vivono nei doc (employee.attachments[] /
+// attendance.attachments[]) e round-trippano col resto; i binari stanno in attachments_bin
+// (fuori dalle collezioni) e NON viaggiano nell'export/backup JSON.
+export const attachmentsReady = () => true;
+export async function addAttachment(file) {
+  try {
+    const res = await authFetch('/api/attachments', {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name || 'file') },
+      body: file,
+    });
+    if (!res.ok) return { ok: false, reason: 'upload' };
+    return { ok: true, meta: await res.json() };
+  } catch (e) { return { ok: false, reason: 'upload', error: e.message }; }
+}
+export async function readAttachment(meta) {
+  if (!meta?.id) return null;
+  try { const res = await authFetch('/api/attachments/' + meta.id); return res.ok ? await res.blob() : null; }
+  catch (e) { return null; }
+}
+export async function deleteAttachment(meta) {
+  if (!meta?.id) return false;
+  try { return (await authFetch('/api/attachments/' + meta.id, { method: 'DELETE' })).ok; }
+  catch (e) { return false; }
+}
+
 // ---- Compat "vault"/FSA: nel modello server lo store durevole è il DB ----
 export const fileSupported = () => false;
 export const vaultStatus = () => ({ supported: true, active: true, needsPerm: false, name: 'server' });

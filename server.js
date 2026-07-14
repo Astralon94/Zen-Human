@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { exportData, importData, applyChanges, resetData, seedIfEmpty, counts } from './server/serialize.js';
 import { backupDb } from './server/db.js';
 import * as updater from './server/updater.js';
+import { putAttachment, getAttachment, deleteAttachment } from './server/attachments.js';
 import { createSession, getSession, destroySession, destroySessionsOfUser, verifyPassword } from './server/auth.js';
 import { PERMISSIONS, NAV, RUOLI, hasPermission, canWriteData, assegnabili } from './server/permissions.js';
 import {
@@ -58,6 +59,13 @@ const readBody = (req) => new Promise((resolve) => {
   let raw = '';
   req.on('data', (c) => { raw += c; });
   req.on('end', () => { try { resolve(raw ? JSON.parse(raw) : {}); } catch { resolve(null); } });
+});
+// Corpo GREZZO (binario) per l'upload degli allegati.
+const readRawBody = (req) => new Promise((resolve) => {
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('end', () => resolve(Buffer.concat(chunks)));
+  req.on('error', () => resolve(Buffer.alloc(0)));
 });
 
 // ---- Autenticazione (multiutenza, Livello A) ----
@@ -190,6 +198,30 @@ async function api(req, res, url) {
         return json(res, 200, { ok: true, ...rep, riavvio: true });
       } catch (e) { return json(res, 500, { error: 'Installazione fallita: ' + e.message }); }
     }
+  }
+
+  // ---- Allegati (BLOB): upload / download / delete ----
+  // Scrittura (upload/delete) dietro la guardia grossolana canWriteData; lettura a
+  // qualsiasi autenticato. I binari sono fuori dalle collezioni: import/export non li toccano.
+  if (resource === 'attachments') {
+    if (method === 'POST' && !id) {
+      if (!canWriteData(user)) return forbid();
+      const bin = await readRawBody(req);
+      if (!bin.length) return json(res, 400, { error: 'File vuoto' });
+      const name = decodeURIComponent(req.headers['x-filename'] || 'file');
+      const type = req.headers['content-type'] || 'application/octet-stream';
+      return json(res, 201, putAttachment(name, type, bin));
+    }
+    if (method === 'GET' && id) { // lettura: qualsiasi autenticato
+      const row = getAttachment(id);
+      if (!row) { res.writeHead(404); return res.end('Not found'); }
+      res.writeHead(200, {
+        'Content-Type': row.type || 'application/octet-stream',
+        'Content-Disposition': `inline; filename="${encodeURIComponent(row.name || 'file')}"`,
+      });
+      return res.end(Buffer.from(row.bin));
+    }
+    if (method === 'DELETE' && id) { if (!canWriteData(user)) return forbid(); return json(res, 200, { ok: deleteAttachment(id) }); }
   }
 
   // ---- UTENTI (gestione account e permessi) ----

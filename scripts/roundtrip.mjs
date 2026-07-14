@@ -9,19 +9,20 @@ const { importData, exportData, applyChanges } = await import('../server/seriali
 const sample = {
   version: 1, rev: 7, savedAt: 111,
   settings: { theme: 'dark', activeCompany: 'co1' },
-  companies: [{ id: 'co1', name: 'Flavor', emoji: '🏢', color: '#4f8a76', piva: '123', cf: 'ABC', note: 'n' }],
+  companies: [{ id: 'co1', name: 'Flavor', emoji: '🏢', color: '#4f8a76', piva: '123', cf: 'ABC', note: 'n', lockedMonths: ['2026-06'] }],
   employees: [{
     id: 'e1', companyId: 'co1', firstName: 'Mario', lastName: 'Rossi', role: 'Banconista', color: '#4f8a76',
     active: true, createdAt: 1000, contract: 'Tempo pieno', contractStart: '2021-01-01', contractEnd: '',
-    contractOpen: true, librettoSanitario: '', notePrivate: 'nota', noteConsultant: '',
+    contractOpen: true, librettoSanitario: '', ferieAnnue: 26, rolAnnui: 8, notePrivate: 'nota', noteConsultant: '',
     salaries: [{ month: '2026-06', net: 1200 }, { month: '2026-07', net: 1250 }],
     loans: [{ id: 'l1', name: 'Anticipo', total: 600, count: 6, startMonth: '2026-06', amount: 100, notes: '',
       createdAt: 2000, plan: [{ n: 1, month: '2026-06', amount: 100, status: 'paid', skipped: false },
                               { n: 2, month: '2026-07', amount: 100, status: 'pending', skipped: false }] }],
+    attachments: [{ id: 'doc1', name: 'contratto.pdf', size: 1234, type: 'application/pdf', addedAt: 1500 }],
   }],
   attendance: [
-    { id: 'a1', companyId: 'co1', employeeId: 'e1', date: '2026-06-30', status: 'present', amount: 0, shift: 'notte', shiftBonus: 5, note: '' },
-    { id: 'a2', companyId: 'co1', employeeId: 'e1', date: '2026-07-01', status: 'ferie', amount: 0, shift: null, shiftBonus: 0, note: '' },
+    { id: 'a1', companyId: 'co1', employeeId: 'e1', date: '2026-06-30', status: 'present', amount: 0, shift: 'notte', shiftBonus: 5, note: '', attachments: [] },
+    { id: 'a2', companyId: 'co1', employeeId: 'e1', date: '2026-07-01', status: 'malattia', amount: 0, shift: null, shiftBonus: 0, note: '', attachments: [{ id: 'cert1', name: 'certificato.pdf', size: 999, type: 'application/pdf', addedAt: 1600 }] },
   ],
   entries: [{ id: 'x1', companyId: 'co1', employeeId: 'e1', month: '2026-06', kind: 'bonus', amount: 50, date: '2026-06-15', desc: 'premio', createdAt: 3000 }],
 };

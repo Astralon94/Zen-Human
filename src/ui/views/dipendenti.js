@@ -9,10 +9,12 @@ import {
 import {
   activeCompany, co, emp, companyEmployees, salaryFor, setSalary,
   monthEntries, attendanceCell, attendanceStats, monthlyNet, cellDeduction,
-  buildLoanPlan, loanResiduo, loanPaid, loanInstallmentsForMonth, statusInfo, entryInfo
+  buildLoanPlan, loanResiduo, loanPaid, loanInstallmentsForMonth, statusInfo, entryInfo,
+  isMonthLocked, leaveStats
 } from '../../domain/payroll.js';
 import { daysUntil, deadlineTone, deadlineLabel, DEADLINE_TYPES } from '../../domain/deadlines.js';
 import { openSheet, closeSheet, confirmDialog, toast } from '../dom.js';
+import { attachmentsHTML, bindAttachments } from '../attachments.js';
 
 let selectedId = null;
 let month = thisMonth();
@@ -79,8 +81,9 @@ function contractPeriod(e) {
 // ---------- SCHEDA DIPENDENTE ----------
 function renderDetail(e) {
   const canEditEmp = can('dipendenti.modifica') || can('dipendenti.elimina');   // la scheda modifica ospita anche l'elimina
-  const canVoci = can('voci.crea');
-  if (!can('presenze.crea') && !can('presenze.elimina')) brush = null;   // niente pennello: il tocco apre la scheda del giorno
+  const locked = isMonthLocked(e.companyId, month);   // mese chiuso: presenze/voci del mese non modificabili
+  const canVoci = can('voci.crea') && !locked;
+  if (locked || (!can('presenze.crea') && !can('presenze.elimina'))) brush = null;   // niente pennello: il tocco apre la scheda del giorno
   let h = `<div class="pagehead">
     <button class="btn sm" data-back>‹ Dipendenti</button>
     <span class="grow"></span>
@@ -105,16 +108,30 @@ function renderDetail(e) {
     </div>`;
   }
 
+  // documenti del dipendente (contratti, documenti d'identità, ecc.)
+  h += `<div class="section-title">Documenti</div>`;
+  h += `<div id="d_docs">${docsInner(e)}</div>`;
+
   // navigatore mese
   h += monthNav();
+
+  // banner mese chiuso
+  if (locked) h += `<div class="card" style="margin-bottom:8px;border-left:3px solid var(--accent);background:var(--accent-soft);font-size:13px">🔒 <b>Mese chiuso</b> — inviato al consulente. Presenze e voci di ${esc(fmtMonth(month))} non sono modificabili.</div>`;
 
   // netto del mese
   h += `<div class="section-title">Netto del mese</div>`;
   h += `<div class="card" id="d_net">${netInner(e)}</div>`;
 
+  // ferie e permessi ROL residui (anno del mese visualizzato; solo se il monte è configurato)
+  const lv = leaveStats(e, month.slice(0, 4));
+  if (lv.ferieConfig || lv.rolConfig) {
+    h += `<div class="section-title">Ferie e permessi · ${esc(month.slice(0, 4))}</div>`;
+    h += `<div class="card" style="font-size:13.5px;line-height:1.7">${leaveLine(lv)}</div>`;
+  }
+
   // presenze
   h += `<div class="section-title">Presenze · <span id="d_stats" class="muted" style="text-transform:none;letter-spacing:0;font-weight:600">${statsText(e)}</span><span class="grow"></span></div>`;
-  h += brushBar();
+  h += brushBar(locked);
   h += `<div class="card" id="d_cal">${calInner(e)}</div>`;
   h += legend();
 
@@ -181,9 +198,10 @@ function statsText(e) {
   return `${st.worked} lavorati · ${st.absences} assenze`;
 }
 
-// barra di compilazione rapida (pennello): stati con presenze.crea, gomma con presenze.elimina
-function brushBar() {
-  const canCrea = can('presenze.crea'), canDel = can('presenze.elimina');
+// barra di compilazione rapida (pennello): stati con presenze.crea, gomma con presenze.elimina.
+// Nei mesi chiusi non compare (nessuna scrittura di presenze).
+function brushBar(locked) {
+  const canCrea = can('presenze.crea') && !locked, canDel = can('presenze.elimina') && !locked;
   if (!canCrea && !canDel) return '';
   const b = (key, label, title) => `<button class="chip ${(brush || '') === key ? 'on' : ''}" data-brush="${key}" title="${esc(title)}">${label}</button>`;
   return `<div class="card" id="d_brush" style="margin-bottom:8px">
@@ -215,7 +233,7 @@ function calInner(e) {
     const sh = cell && cell.shift ? shiftInfo(cell.shift) : null;
     cells += `<div class="${cls}" style="${style}" data-day="${ds}">
       <div class="dn">${d}</div>
-      ${cell ? `<div class="st">${statusInfo(cell.status).emoji}${sh ? ' <span style="font-size:9px;opacity:.85">' + sh.emoji + '</span>' : ''}</div>` : ''}
+      ${cell ? `<div class="st">${statusInfo(cell.status).emoji}${sh ? ' <span style="font-size:9px;opacity:.85">' + sh.emoji + '</span>' : ''}${cell.attachments?.length ? ' <span style="font-size:9px">📎</span>' : ''}</div>` : ''}
       ${cell && cell.shiftBonus ? `<div class="ded" style="color:#4f8a76">+${fmtNum(cell.shiftBonus)}</div>` : (ded ? `<div class="ded">−${fmtNum(ded)}</div>` : '')}
     </div>`;
   }
@@ -228,6 +246,29 @@ function legend() {
     const s = STATUSES[k];
     return `<span class="tag"><i style="background:${s.color}"></i>${s.emoji} ${esc(s.label)}</span>`;
   }).join('')}</div>`;
+}
+
+// documenti del dipendente (allegati su employee.attachments[])
+function docsInner(e) {
+  return attachmentsHTML(e.attachments, { canEdit: can('dipendenti.modifica'), idPrefix: 'doc', empty: 'Nessun documento allegato.' });
+}
+
+// certificato allegabile solo a malattia/infortunio (record già persistito)
+function certEligible(cell) { return !!cell && (cell.status === 'malattia' || cell.status === 'infortunio'); }
+function certBlockHTML(cell, canEdit) {
+  if (!certEligible(cell)) return '';
+  return `<div class="field"><label>📎 Certificato · ${esc(STATUSES[cell.status].label)}</label>
+    ${attachmentsHTML(cell.attachments, { canEdit, idPrefix: 'cert', empty: 'Nessun certificato allegato.' })}</div>`;
+}
+
+// giorni: interi senza decimali, altrimenti due cifre
+const fmtDays = n => Number.isInteger(n) ? String(n) : fmtNum(n);
+// riga ferie/ROL residui (rosso se il residuo è negativo)
+function leaveLine(s) {
+  const parts = [];
+  if (s.ferieConfig) parts.push(`🏖️ <b>Ferie</b>: ${s.ferieUsed}/${fmtDays(s.ferieAnnue)} → <b class="${s.ferieLeft < 0 ? 'neg' : ''}">restano ${fmtDays(s.ferieLeft)}</b>`);
+  if (s.rolConfig) parts.push(`📝 <b>Permessi ROL</b>: ${s.rolUsed}/${fmtDays(s.rolAnnui)} → <b class="${s.rolLeft < 0 ? 'neg' : ''}">restano ${fmtDays(s.rolLeft)}</b>`);
+  return parts.join('<br>');
 }
 
 // ---------- BIND ----------
@@ -255,7 +296,20 @@ function bindDetail(root, e) {
   });
   bindSalary(root, e);
   bindDays(root, e);
+  bindDocs(root, e);
   setCalCursor(root);
+}
+
+// documenti del dipendente: aggiungi/apri/elimina (refresh in place della sola sezione)
+function bindDocs(root, e) {
+  const scope = root.querySelector('#d_docs');
+  if (!scope) return;
+  bindAttachments(scope, {
+    getAtts: () => (e.attachments ||= []),
+    setAtts: arr => { e.attachments = arr; },
+    canEdit: can('dipendenti.modifica'), idPrefix: 'doc',
+    onChange: () => { save(); scope.innerHTML = docsInner(e); bindDocs(root, e); },
+  });
 }
 
 function bindSalary(root, e) { const s = root.querySelector('[data-salary]'); if (s) s.onclick = () => salarySheet(e); }
@@ -274,6 +328,7 @@ function setCalCursor(root) {
 function paintDay(e, ds) {
   // gomma = eliminazione; stato = compilazione (crea)
   if (brush === '__erase' ? !can('presenze.elimina') : !can('presenze.crea')) return;
+  if (isMonthLocked(e.companyId, month)) return;   // mese chiuso: niente scritture
   const ex = data.attendance.find(a => a.employeeId === e.id && a.date === ds);
   if (brush === '__erase') {
     if (ex) data.attendance = data.attendance.filter(a => a !== ex);
@@ -324,6 +379,10 @@ function empSheet(e) {
     </div>
     <div class="field"><label><input type="checkbox" id="f_copen" ${e?.contractOpen ? 'checked' : ''}> Tempo indeterminato (nessuna scadenza)</label></div>
     <div class="field"><label>🩺 Scadenza libretto sanitario</label><input id="f_libretto" type="date" value="${esc(e?.librettoSanitario || '')}"></div>
+    <div class="frow">
+      <div class="field"><label>🏖️ Ferie annue (giorni)</label><input id="f_ferie" inputmode="decimal" value="${e?.ferieAnnue ? esc(fmtDays(e.ferieAnnue)) : ''}" placeholder="Es. 26"></div>
+      <div class="field"><label>📝 Permessi ROL annui (giorni)</label><input id="f_rol" inputmode="decimal" value="${e?.rolAnnui ? esc(fmtDays(e.rolAnnui)) : ''}" placeholder="Es. 8"></div>
+    </div>
     <div class="field"><label>🔒 Nota privata (solo interna)</label><textarea id="f_noteprivate" rows="2" placeholder="Non compare in nessun export">${esc(e?.notePrivate || '')}</textarea></div>
     <div class="field"><label>📋 Nota per il consulente</label><textarea id="f_noteconsultant" rows="2" placeholder="Se compilata, viene allegata al PDF per il consulente">${esc(e?.noteConsultant || '')}</textarea></div>
     <div class="field"><label>Colore</label><div class="btnrow" id="f_colors">${colors.map(c => `<button data-color="${c}" style="width:26px;height:26px;border-radius:50%;background:${c};border:2px solid ${(e?.color || '#4f8a76') === c ? 'var(--txt)' : 'transparent'}"></button>`).join('')}</div></div>
@@ -357,6 +416,8 @@ function empSheet(e) {
         contractOpen: cOpen,
         contractEnd: cOpen ? '' : (sheet.querySelector('#f_cend').value || ''),
         librettoSanitario: sheet.querySelector('#f_libretto').value || '',
+        ferieAnnue: parseAmount(sheet.querySelector('#f_ferie').value) || 0,   // giorni/anno (0 = non configurato)
+        rolAnnui: parseAmount(sheet.querySelector('#f_rol').value) || 0,        // giorni/anno (0 = non configurato)
         notePrivate: sheet.querySelector('#f_noteprivate').value.trim(),
         noteConsultant: sheet.querySelector('#f_noteconsultant').value.trim()
       };
@@ -364,7 +425,7 @@ function empSheet(e) {
         Object.assign(e, obj);
         e.active = sheet.querySelector('#f_active').value === '1';
       } else {
-        const ne = { id: uid(), companyId: cid, ...obj, active: true, createdAt: Date.now(), salaries: [], loans: [] };
+        const ne = { id: uid(), companyId: cid, ...obj, active: true, createdAt: Date.now(), salaries: [], loans: [], attachments: [] };
         data.employees.push(ne);
         selectedId = ne.id;
       }
@@ -407,8 +468,10 @@ function salarySheet(e) {
 
 function daySheet(e, ds) {
   const cell = attendanceCell(e, ds);
-  const w = cell ? can('presenze.modifica') : can('presenze.crea');   // salva: modifica su giornata esistente, crea su giornata nuova
-  const canClear = !!cell && can('presenze.elimina');                 // svuota giornata
+  const locked = isMonthLocked(e.companyId, month);                   // mese chiuso: sola lettura
+  const w = (cell ? can('presenze.modifica') : can('presenze.crea')) && !locked;   // salva: modifica su giornata esistente, crea su giornata nuova
+  const canClear = !!cell && can('presenze.elimina') && !locked;      // svuota giornata
+  const certCanEdit = !!cell && can('presenze.modifica') && !locked;  // allegare/rimuovere il certificato
   const auto = Math.round(salaryFor(e, month) / 26 * 100) / 100; // trattenuta automatica permesso non retrib.
   openSheet(`
     <h2>${fmtDateFull(ds)}</h2>
@@ -430,6 +493,7 @@ function daySheet(e, ds) {
       <div class="muted" id="nrhint" style="font-size:12px;margin-top:4px;display:none">Automatico: netto pattuito ÷ 26 = <b>${fmtNum(auto)}</b>. Lascia vuoto per usarlo, oppure scrivi un importo per sovrascriverlo.</div>
     </div>
     <div class="field"><label>Nota</label><input id="f_note" value="${esc(cell?.note || '')}"></div>
+    <div id="certblk">${certBlockHTML(cell, certCanEdit)}</div>
     <div class="actions">
       ${canClear ? '<button class="btn danger" data-clear>Svuota</button>' : ''}
       <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
@@ -440,6 +504,13 @@ function daySheet(e, ds) {
     const amtwrap = sheet.querySelector('#amtwrap'), shiftwrap = sheet.querySelector('#shiftwrap');
     const nrhint = sheet.querySelector('#nrhint'), amtlbl = sheet.querySelector('#amtlbl'), amtInput = sheet.querySelector('#f_amt');
     if (!w) sheet.querySelectorAll('input, textarea, [data-st], [data-sh]').forEach(el => { el.disabled = true; el.style.pointerEvents = 'none'; });
+    // certificato (malattia/infortunio): aggiungi/apri/elimina sull'attendance record
+    if (certEligible(cell)) bindAttachments(sheet, {
+      getAtts: () => (cell.attachments ||= []),
+      setAtts: arr => { cell.attachments = arr; },
+      canEdit: certCanEdit, idPrefix: 'cert',
+      onChange: () => { save(); refreshInPlace(e); daySheet(e, ds); },
+    });
     const updateDyn = () => {
       const isAbs = STATUSES[status]?.kind === 'absence';
       amtwrap.style.display = isAbs ? '' : 'none';
@@ -480,8 +551,9 @@ function daySheet(e, ds) {
 
 function entrySheet(e, id) {
   const x = id ? data.entries.find(z => z.id === id) : null;
-  const w = x ? can('voci.modifica') : can('voci.crea');   // salva: modifica su voce esistente, crea su voce nuova
-  const canDelV = !!x && can('voci.elimina');               // elimina voce
+  const entLocked = x ? isMonthLocked(e.companyId, x.month) : false;   // voce in un mese chiuso: sola lettura
+  const w = (x ? can('voci.modifica') : can('voci.crea')) && !entLocked;   // salva: modifica su voce esistente, crea su voce nuova
+  const canDelV = !!x && can('voci.elimina') && !entLocked;             // elimina voce
   openSheet(`
     <h2>${x ? (w ? 'Modifica voce' : 'Dettaglio voce') : 'Nuova voce'}</h2>
     <div class="field"><label>Tipo</label><select id="f_kind">${Object.entries(ENTRY_KINDS).map(([k, v]) => `<option value="${k}" ${x?.kind === k ? 'selected' : ''}>${v.emoji} ${esc(v.label)}</option>`).join('')}</select></div>
@@ -501,6 +573,7 @@ function entrySheet(e, id) {
       const amt = parseAmount(sheet.querySelector('#f_amt').value);
       if (amt == null) { toast('Importo non valido'); return; }
       const date = sheet.querySelector('#f_date').value || todayStr();
+      if (isMonthLocked(e.companyId, date.slice(0, 7))) { toast('Mese chiuso: voce non consentita'); return; }
       const obj = { kind: sheet.querySelector('#f_kind').value, amount: amt, date, month: date.slice(0, 7), desc: sheet.querySelector('#f_desc').value.trim() };
       if (x) Object.assign(x, obj);
       else data.entries.push({ id: uid(), companyId: e.companyId, employeeId: e.id, ...obj, createdAt: Date.now() });

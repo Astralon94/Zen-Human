@@ -7,8 +7,9 @@ import {
   esc, uid, fmt, fmtNum, parseAmount, fullName, initials, fmtMonth, shiftMonth,
   daysInMonth, weekdayMon0, pad2, todayStr, fmtDateFull, GIORNI, thisMonth
 } from '../../domain/util.js';
-import { activeCompany, co, emp, companyEmployees, attendanceCell, statusInfo, monthlyNet, salaryFor, cellDeduction } from '../../domain/payroll.js';
-import { openSheet, closeSheet, toast } from '../dom.js';
+import { activeCompany, co, emp, companyEmployees, attendanceCell, statusInfo, monthlyNet, salaryFor, cellDeduction, isMonthLocked } from '../../domain/payroll.js';
+import { openSheet, closeSheet, confirmDialog, toast } from '../dom.js';
+import { attachmentsHTML, bindAttachments } from '../attachments.js';
 import { getMonth, setMonth } from './dipendenti.js';
 
 let brush = null; // null = Dettaglio; '__erase' = gomma; altrimenti chiave stato
@@ -16,11 +17,12 @@ let brush = null; // null = Dettaglio; '__erase' = gomma; altrimenti chiave stat
 export function render() {
   const cid = activeCompany();
   if (!cid) return `<div class="pagehead"><h1>Compilazione</h1></div><div class="card empty">Crea prima un'azienda dalla sezione Aziende.</div>`;
-  const canCrea = can('presenze.crea');       // pennello stati + salva su cella nuova
-  const canDel = can('presenze.elimina');      // gomma / svuota cella
+  const month = getMonth();
+  const locked = isMonthLocked(cid, month);    // mese chiuso: nessuna scrittura di presenze
+  const canCrea = can('presenze.crea') && !locked;   // pennello stati + salva su cella nuova
+  const canDel = can('presenze.elimina') && !locked; // gomma / svuota cella
   const canPaint = canCrea || canDel;          // barra pennello visibile
   if (!canPaint) brush = null;   // niente pennello: il tocco apre la scheda del giorno (lettura o modifica)
-  const month = getMonth();
   const emps = companyEmployees(cid);
 
   let h = `<div class="pagehead"><h1>Compilazione</h1><span class="sub">${esc((co(cid)?.emoji || '') + ' ' + co(cid)?.name)}</span></div>`;
@@ -29,7 +31,9 @@ export function render() {
     <div style="flex:1;text-align:center;font-weight:700">${esc(fmtMonth(month))}</div>
     <button class="btn sm" data-mnext>›</button>
     <button class="btn sm" data-mtoday>Oggi</button>
+    ${can('mese.chiusura') ? `<button class="btn sm" data-lock>${locked ? '🔓 Riapri' : '🔒 Chiudi'}</button>` : ''}
   </div>`;
+  if (locked) h += `<div class="card" style="margin-bottom:8px;border-left:3px solid var(--accent);background:var(--accent-soft);font-size:13px">🔒 <b>Mese chiuso</b> — inviato al consulente. Le presenze di ${esc(fmtMonth(month))} non sono modificabili.</div>`;
 
   if (!emps.length) { h += `<div class="card empty">Nessun dipendente attivo in questa azienda.</div>`; return h; }
 
@@ -84,7 +88,8 @@ function cellHTML(e, ds) {
   if (cell) {
     const info = statusInfo(cell.status);
     const mark = (cellDeduction(e, getMonth(), cell) > 0 || cell.shiftBonus) ? '<sup>•</sup>' : '';
-    return `<td class="mcell" data-emp="${e.id}" data-day="${ds}" style="background:${info.color};color:#fff">${info.short}${mark}</td>`;
+    const clip = cell.attachments?.length ? '<sup>📎</sup>' : '';
+    return `<td class="mcell" data-emp="${e.id}" data-day="${ds}" style="background:${info.color};color:#fff">${info.short}${mark}${clip}</td>`;
   }
   return `<td class="mcell unset ${wknd ? 'wknd' : ''}" data-emp="${e.id}" data-day="${ds}"></td>`;
 }
@@ -93,6 +98,7 @@ export function bind(root) {
   root.querySelector('[data-mprev]')?.addEventListener('click', () => { setMonth(shiftMonth(getMonth(), -1)); rerender(); });
   root.querySelector('[data-mnext]')?.addEventListener('click', () => { setMonth(shiftMonth(getMonth(), 1)); rerender(); });
   root.querySelector('[data-mtoday]')?.addEventListener('click', () => { setMonth(thisMonth()); rerender(); });
+  root.querySelector('[data-lock]')?.addEventListener('click', toggleLock);
   if (!companyEmployees(activeCompany()).length) return;
 
   root.querySelectorAll('[data-brush]').forEach(b => b.onclick = () => {
@@ -115,6 +121,7 @@ function bindCells(root) {
 function paintCell(e, ds, td) {
   // gomma = eliminazione; stato = compilazione (crea)
   if (brush === '__erase' ? !can('presenze.elimina') : !can('presenze.crea')) return;
+  if (isMonthLocked(e.companyId, getMonth())) return;   // mese chiuso: niente scritture
   const month = getMonth();
   const ex = data.attendance.find(a => a.employeeId === e.id && a.date === ds);
   if (brush === '__erase') {
@@ -136,6 +143,7 @@ function replaceCell(td, e, ds) {
   const fresh = tmp.querySelector('td');
   fresh.onclick = () => { if (brush === null) dayEditor(e, ds, fresh); else paintCell(e, ds, fresh); };
   td.replaceWith(fresh);
+  return fresh;
 }
 function updateNetto(e, month) {
   const cell = document.querySelector(`[data-net="${e.id}"]`);
@@ -145,8 +153,10 @@ function updateNetto(e, month) {
 // editor compatto del singolo giorno (modalità Dettaglio)
 function dayEditor(e, ds, td) {
   const cell = attendanceCell(e, ds);
-  const w = cell ? can('presenze.modifica') : can('presenze.crea');   // salva: modifica su cella esistente, crea su cella nuova
-  const canClear = !!cell && can('presenze.elimina');                  // svuota cella
+  const locked = isMonthLocked(e.companyId, getMonth());               // mese chiuso: sola lettura
+  const w = (cell ? can('presenze.modifica') : can('presenze.crea')) && !locked;   // salva: modifica su cella esistente, crea su cella nuova
+  const canClear = !!cell && can('presenze.elimina') && !locked;       // svuota cella
+  const certCanEdit = !!cell && can('presenze.modifica') && !locked;   // allegare/rimuovere il certificato
   const auto = Math.round(salaryFor(e, getMonth()) / 26 * 100) / 100;
   openSheet(`
     <h2>${esc(fullName(e))}</h2>
@@ -168,6 +178,7 @@ function dayEditor(e, ds, td) {
       <div class="muted" id="nrhint" style="font-size:12px;margin-top:4px;display:none">Automatico: netto pattuito ÷ 26 = <b>${fmtNum(auto)}</b>. Lascia vuoto per usarlo, oppure scrivi un importo per sovrascriverlo.</div>
     </div>
     <div class="field"><label>Nota</label><input id="f_note" value="${esc(cell?.note || '')}"></div>
+    <div id="certblk">${certBlockHTML(cell, certCanEdit)}</div>
     <div class="actions">
       ${canClear ? '<button class="btn danger" data-clear>Svuota</button>' : ''}
       <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
@@ -212,7 +223,41 @@ function dayEditor(e, ds, td) {
     });
     const clr = sheet.querySelector('[data-clear]');
     if (clr) clr.onclick = () => { data.attendance = data.attendance.filter(a => !(a.employeeId === e.id && a.date === ds)); save(); closeSheet(); replaceCell(td, e, ds); updateNetto(e, getMonth()); };
+    // certificato (malattia/infortunio): aggiungi/apri/elimina sull'attendance record
+    if (certEligible(cell)) bindAttachments(sheet, {
+      getAtts: () => (cell.attachments ||= []),
+      setAtts: arr => { cell.attachments = arr; },
+      canEdit: certCanEdit, idPrefix: 'cert',
+      onChange: () => { save(); const fresh = replaceCell(td, e, ds); dayEditor(e, ds, fresh); },
+    });
   });
+}
+
+// certificato allegabile solo a malattia/infortunio (record già persistito)
+function certEligible(cell) { return !!cell && (cell.status === 'malattia' || cell.status === 'infortunio'); }
+function certBlockHTML(cell, canEdit) {
+  if (!certEligible(cell)) return '';
+  return `<div class="field"><label>📎 Certificato · ${esc(STATUSES[cell.status].label)}</label>
+    ${attachmentsHTML(cell.attachments, { canEdit, idPrefix: 'cert', empty: 'Nessun certificato allegato.' })}</div>`;
+}
+
+// Chiude/riapre il (azienda attiva, mese visualizzato): aggiorna lockedMonths sul doc azienda.
+function toggleLock() {
+  if (!can('mese.chiusura')) return;
+  const cid = activeCompany(); const month = getMonth();
+  const c = co(cid); if (!c) return;
+  const locked = isMonthLocked(cid, month);
+  confirmDialog(
+    locked ? `Riaprire ${fmtMonth(month)}?` : `Chiudere ${fmtMonth(month)}?`,
+    locked ? 'Le presenze e le voci del mese torneranno modificabili.'
+           : 'Il mese verrà bloccato: presenze e voci non saranno più modificabili finché non lo riapri.',
+    locked ? 'Riapri' : 'Chiudi',
+    () => {
+      if (!Array.isArray(c.lockedMonths)) c.lockedMonths = [];
+      if (locked) c.lockedMonths = c.lockedMonths.filter(m => m !== month);
+      else if (!c.lockedMonths.includes(month)) c.lockedMonths.push(month);
+      save(); rerender(); toast(locked ? 'Mese riaperto' : 'Mese chiuso ✓');
+    });
 }
 
 function rerender() {

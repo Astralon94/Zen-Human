@@ -21,6 +21,10 @@ function ddl() {
   let sql = `
     CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
     CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT);
+    -- Allegati (binari): tabella STANDALONE, fuori da COLLECTIONS. Import/export/reset/changes
+    -- NON la toccano mai (i binari non finiscono nei backup JSON). I metadati vivono nei doc
+    -- degli ospiti (employee.attachments[] / attendance.attachments[]).
+    CREATE TABLE IF NOT EXISTS attachments_bin (id TEXT PRIMARY KEY, name TEXT, type TEXT, size INTEGER, addedAt INTEGER, bin BLOB);
     -- Utenti/permessi (multiutenza): tabella STANDALONE, fuori da COLLECTIONS.
     -- Import/export/reset/changes NON la toccano mai (le password non finiscono nei
     -- backup JSON e un import non azzera gli account). Additiva: i DB esistenti

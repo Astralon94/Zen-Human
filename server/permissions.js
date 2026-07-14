@@ -39,6 +39,7 @@ export const PERMISSIONS = [
   { key: 'presenze.crea',       group: 'Presenze',       label: 'Compilare le presenze (pennello e nuove giornate)', write: true },
   { key: 'presenze.modifica',   group: 'Presenze',       label: 'Modificare le giornate già registrate', write: true },
   { key: 'presenze.elimina',    group: 'Presenze',       label: 'Svuotare le giornate di presenza', write: true },
+  { key: 'mese.chiusura',       group: 'Presenze',       label: 'Chiudere e riaprire i mesi (blocca le modifiche)', write: true },
 
   // ---- Retribuzioni (voci economiche) ----
   { key: 'voci.view',           group: 'Retribuzioni',   label: 'Consultare le voci economiche (bonus, sanzioni, acconti)' },

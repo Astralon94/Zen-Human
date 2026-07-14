@@ -4,8 +4,8 @@
 import { data, save } from '../../state/store.js';
 import { can } from '../../state/auth.js';
 import { ENTRY_KINDS } from '../../state/model.js';
-import { esc, uid, fmt, fmtNum, parseAmount, fullName, fmtDateFull, todayStr, pad2, round2 } from '../../domain/util.js';
-import { activeCompany, co, emp, companyEmployees, entryInfo } from '../../domain/payroll.js';
+import { esc, uid, fmt, fmtNum, parseAmount, fullName, fmtDateFull, fmtMonth, todayStr, pad2, round2 } from '../../domain/util.js';
+import { activeCompany, co, emp, companyEmployees, entryInfo, isMonthLocked } from '../../domain/payroll.js';
 import { openSheet, closeSheet, confirmDialog, toast } from '../dom.js';
 
 const KINDS = ['bonus', 'sanction', 'advance'];   // bonus, sanzioni e acconti
@@ -35,6 +35,10 @@ export function render() {
     ${canCrea ? `<button class="btn primary" data-new ${emps.length ? '' : 'disabled'}>+ Nuovo</button>` : ''}</div>`;
 
   if (!emps.length) { h += `<div class="card empty">Nessun dipendente in questa azienda. Aggiungine uno per registrare bonus o sanzioni.</div>`; return h; }
+
+  // banner mesi chiusi: le voci datate in questi mesi non sono modificabili
+  const lockedMonths = (co(cid)?.lockedMonths || []).slice().sort();
+  if (lockedMonths.length) h += `<div class="card" style="margin-bottom:8px;border-left:3px solid var(--accent);background:var(--accent-soft);font-size:13px">🔒 <b>Mesi chiusi</b>: ${lockedMonths.map(m => esc(fmtMonth(m))).join(' · ')} — le voci di questi mesi non sono modificabili.</div>`;
 
   const all = data.entries.filter(x => x.companyId === cid && KINDS.includes(x.kind));
   const sumOf = k => round2(all.filter(x => x.kind === k).reduce((s, x) => s + (Number(x.amount) || 0), 0));
@@ -75,8 +79,9 @@ function rerender() { const root = document.getElementById('view'); root.innerHT
 function entrySheet(id) {
   const cid = activeCompany();
   const x = id ? data.entries.find(z => z.id === id) : null;
-  const w = x ? can('voci.modifica') : can('voci.crea');   // salva: modifica su voce esistente, crea su voce nuova
-  const canDelV = !!x && can('voci.elimina');               // elimina voce
+  const entLocked = x ? isMonthLocked(cid, x.month) : false;   // voce in un mese chiuso: sola lettura
+  const w = (x ? can('voci.modifica') : can('voci.crea')) && !entLocked;   // salva: modifica su voce esistente, crea su voce nuova
+  const canDelV = !!x && can('voci.elimina') && !entLocked;    // elimina voce
   const emps = companyEmployees(cid, { includeInactive: true });
   openSheet(`
     <h2>${x ? (w ? 'Modifica voce' : 'Dettaglio voce') : 'Nuovo bonus / sanzione'}</h2>
@@ -107,6 +112,7 @@ function entrySheet(id) {
       const amt = parseAmount(sheet.querySelector('#f_amt').value);
       if (amt == null) { toast('Importo non valido'); return; }
       const date = sheet.querySelector('#f_date').value || todayStr();
+      if (isMonthLocked(cid, date.slice(0, 7))) { toast('Mese chiuso: voce non consentita'); return; }
       const obj = { employeeId: empId, kind, amount: amt, date, month: date.slice(0, 7), desc: sheet.querySelector('#f_desc').value.trim() };
       if (x) Object.assign(x, obj);
       else data.entries.push({ id: uid(), companyId: cid, ...obj, createdAt: Date.now() });

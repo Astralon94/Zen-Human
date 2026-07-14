@@ -1,10 +1,10 @@
 // ============ Vista Riepilogo: prospetto mensile per il consulente del lavoro ============
-import { data } from '../../state/store.js';
+import { data, save } from '../../state/store.js';
 import { can } from '../../state/auth.js';
 import { STATUS_ORDER, STATUSES } from '../../state/model.js';
 import { esc, fmt, fmtNum, fmtMonth, shiftMonth, fullName, daysInMonth, weekdayMon0, pad2, GIORNI, round2, thisMonth, MESI } from '../../domain/util.js';
-import { activeCompany, co, companyEmployees, monthlyNet, attendanceStats, attendanceCell, statusInfo, nettoConsulente } from '../../domain/payroll.js';
-import { printDocument, downloadText, toast } from '../dom.js';
+import { activeCompany, co, companyEmployees, monthlyNet, attendanceStats, attendanceCell, statusInfo, nettoConsulente, laborCost, leaveStats, isMonthLocked } from '../../domain/payroll.js';
+import { printDocument, downloadText, confirmDialog, toast } from '../dom.js';
 import { go } from '../app.js';
 import { openEmployee, getMonth, setMonth } from './dipendenti.js';
 
@@ -27,15 +27,29 @@ export function render() {
 
   if (!emps.length) { h += `<div class="card empty">Nessun dipendente attivo in questa azienda.</div>`; return h; }
 
-  // totale netto del mese
+  // Costo del lavoro del mese = somma dei netti mensili (== netto totale) con confronto vs mese
+  // precedente. Convenzione colore (framing costo): aumento = rosso, calo = verde.
   const totalNet = emps.reduce((s, e) => s + monthlyNet(e, month).net, 0);
+  const cost = laborCost(cid, month);
+  const prevMonth = shiftMonth(month, -1);
+  const prevCost = laborCost(cid, prevMonth);
+  const delta = prevCost > 0 ? round2((cost - prevCost) / prevCost * 100) : null;
+  const deltaHTML = delta == null
+    ? `<span class="muted">${prevCost ? '—' : 'nessun mese prec.'}</span>`
+    : `<span class="${delta > 0 ? 'neg' : delta < 0 ? 'pos' : 'muted'}" style="font-weight:700">${delta > 0 ? '+' : ''}${fmtPct(delta)}%</span> <span class="muted">vs ${esc(fmtMonth(prevMonth))}</span>`;
   h += `<div class="grid k3" style="margin-bottom:6px">
     <div class="card kpi"><div class="lbl">Dipendenti</div><div class="val tnum">${emps.length}</div></div>
-    <div class="card kpi"><div class="lbl">Netto totale</div><div class="val tnum">${fmt(totalNet)}</div></div>
+    <div class="card kpi"><div class="lbl">Costo del lavoro</div><div class="val tnum">${fmt(cost)}</div>
+      <div style="font-size:12px;margin-top:3px">${deltaHTML}</div></div>
     <div class="card kpi"><div class="lbl">Mese</div><div class="val" style="font-size:16px">${esc(fmtMonth(month))}</div></div>
   </div>`;
 
+  // Blocco del mese (chiusura): banner se chiuso; il pulsante è vicino agli export.
+  const locked = isMonthLocked(cid, month);
+  if (locked) h += lockBanner(month);
+
   h += `<div class="section-title">Presenze / assenze<span class="grow"></span>
+    ${can('mese.chiusura') ? `<button class="btn sm" data-lock>${locked ? '🔓 Riapri mese' : '🔒 Chiudi mese'}</button>` : ''}
     ${can('riepilogo.esporta') ? `<button class="btn sm primary" data-pdfcons>PDF consulente</button>
     <button class="btn sm" data-pdf>PDF interno</button>
     <button class="btn sm" data-csv>CSV</button>` : ''}</div>`;
@@ -56,7 +70,34 @@ export function render() {
   h += `<tr class="tot"><td>Totale</td><td class="r">${totWorked}</td>${COLS.map(k => `<td class="r">${emps.reduce((s, e) => s + (attendanceStats(e, month).counts[k] || 0), 0) || ''}</td>`).join('')}<td class="r tnum">${fmt(totalNet)}</td></tr>`;
   h += `</tbody></table></div>`;
   h += `<div class="muted" style="font-size:12px;margin-top:10px">Legenda: ${COLS.map(k => `<b>${STATUSES[k].short}</b> ${esc(STATUSES[k].label)}`).join(' · ')}. Lav. = giorni lavorati.</div>`;
+
+  // Ferie e permessi ROL residui: indicazione sintetica per l'anno del mese visualizzato
+  // (solo i dipendenti con monte annuo configurato).
+  const year = month.slice(0, 4);
+  const withLeave = emps.map(e => ({ e, s: leaveStats(e, year) })).filter(x => x.s.ferieConfig || x.s.rolConfig);
+  if (withLeave.length) {
+    h += `<div class="section-title" style="margin-top:16px">Ferie e permessi residui · anno ${esc(year)}</div>`;
+    h += `<div class="list">${withLeave.map(({ e, s }) => `<div class="row">
+      <div class="mid"><div class="t1">${esc(fullName(e))}</div></div>
+      <div class="t2" style="text-align:right;font-size:12.5px">${leaveSummary(s)}</div>
+    </div>`).join('')}</div>`;
+  }
   return h;
+}
+
+// percentuale it-IT a una cifra decimale
+const fmtPct = v => Number(v).toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+// giorni: interi senza decimali, altrimenti due cifre
+const fmtDays = n => Number.isInteger(n) ? String(n) : fmtNum(n);
+// riepilogo compatto ferie/ROL residui (rosso se il residuo è negativo)
+function leaveSummary(s) {
+  const parts = [];
+  if (s.ferieConfig) parts.push(`Ferie ${s.ferieUsed}/${fmtDays(s.ferieAnnue)} → <b class="${s.ferieLeft < 0 ? 'neg' : ''}">restano ${fmtDays(s.ferieLeft)}</b>`);
+  if (s.rolConfig) parts.push(`ROL ${s.rolUsed}/${fmtDays(s.rolAnnui)} → <b class="${s.rolLeft < 0 ? 'neg' : ''}">restano ${fmtDays(s.rolLeft)}</b>`);
+  return parts.join(' · ');
+}
+function lockBanner(month) {
+  return `<div class="card" style="margin-bottom:12px;border-left:3px solid var(--accent);background:var(--accent-soft);font-size:13px">🔒 <b>Mese chiuso</b> — inviato al consulente. Presenze e voci di ${esc(fmtMonth(month))} non sono modificabili.</div>`;
 }
 
 export function bind(root) {
@@ -64,12 +105,32 @@ export function bind(root) {
   root.querySelector('[data-mnext]').onclick = () => { setMonth(shiftMonth(getMonth(), 1)); rerender(); };
   root.querySelector('[data-mtoday]')?.addEventListener('click', () => { setMonth(thisMonth()); rerender(); });
   root.querySelectorAll('[data-emp]').forEach(b => b.onclick = () => { openEmployee(b.dataset.emp); go('dip'); });
+  root.querySelector('[data-lock]')?.addEventListener('click', toggleLock);
   root.querySelector('[data-pdf]')?.addEventListener('click', exportPDF);
   root.querySelector('[data-pdfcons]')?.addEventListener('click', exportConsulente);
   root.querySelector('[data-csv]')?.addEventListener('click', exportCSV);
 }
 
 function rerender() { const root = document.getElementById('view'); root.innerHTML = render(); bind(root); }
+
+// Chiude/riapre il (azienda attiva, mese visualizzato): aggiorna lockedMonths sul doc azienda.
+function toggleLock() {
+  if (!can('mese.chiusura')) return;
+  const cid = activeCompany(); const month = getMonth();
+  const c = co(cid); if (!c) return;
+  const locked = isMonthLocked(cid, month);
+  confirmDialog(
+    locked ? `Riaprire ${fmtMonth(month)}?` : `Chiudere ${fmtMonth(month)}?`,
+    locked ? 'Le presenze e le voci del mese torneranno modificabili.'
+           : 'Il mese verrà bloccato: presenze e voci non saranno più modificabili finché non lo riapri.',
+    locked ? 'Riapri' : 'Chiudi',
+    () => {
+      if (!Array.isArray(c.lockedMonths)) c.lockedMonths = [];
+      if (locked) c.lockedMonths = c.lockedMonths.filter(m => m !== month);
+      else if (!c.lockedMonths.includes(month)) c.lockedMonths.push(month);
+      save(); rerender(); toast(locked ? 'Mese riaperto' : 'Mese chiuso ✓');
+    });
+}
 
 function exportPDF() {
   const cid = activeCompany(); const month = getMonth();
