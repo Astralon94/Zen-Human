@@ -222,11 +222,55 @@ table.matrix thead .nettocol { z-index: 4; background: var(--card2); }
 .bar { height: 6px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 8px; }
 .bar > i { display: block; height: 100%; background: var(--accent); }
 
-@media (max-width: 620px) {
-  .sheet { top: auto; bottom: 0; transform: translate(-50%, 100%); width: 100vw; border-radius: 18px 18px 0 0; max-height: 92vh; }
-  .sheet.show { transform: translate(-50%, 0); }
-  .grid.k4 { grid-template-columns: repeat(2, 1fr); } .grid.k3 { grid-template-columns: repeat(2, 1fr); }
+/* ============ Responsive — breakpoint di famiglia: ≤900 (tablet/stretto) e ≤600 (telefono) ============ */
+@media (max-width: 900px) {
+  #view { padding: 20px 14px 84px; }
+  #view.wide { padding-left: 10px; padding-right: 10px; }
+  .grid.k4 { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 600px) {
+  /* ---- layout base più compatto ---- */
+  #view { padding: 16px 12px 80px; }
+  .card { padding: 14px 14px; }
+  .pagehead h1 { font-size: 20px; }
+
+  /* ---- topbar: nasconde le etichette lunghe, tiene le funzioni ---- */
+  .topbar { padding: 10px 12px; gap: 8px; }
   .topbar .brand { display: none; }
-  .cal .day { min-height: 44px; }
+  .sb-txt { display: none; }              /* spia salvataggio: solo il pallino di stato */
+  .savebadge { margin-left: 4px !important; }
+  .topbar-username { display: none; }     /* menu utente: solo icona 👤 + freccia */
+  .navbtn { padding: 7px 10px; }
+  .selbox { max-width: 40vw; }
+
+  /* ---- griglie: due colonne (KPI), min-width:0 per non sforare ---- */
+  .grid.k3, .grid.k4 { grid-template-columns: repeat(2, 1fr); }
+  .grid.k2 { grid-template-columns: 1fr; }
+  .grid > * { min-width: 0; }
+
+  /* ---- font ≥16px sugli input: evita l'auto-zoom di iOS al focus ---- */
+  input, select, textarea { font-size: 16px; }
+
+  /* ---- form multi-colonna → una colonna ---- */
+  .frow { flex-direction: column; gap: 0; }
+
+  /* ---- barre azioni (section-title, pulsantiere) a capo ordinato ---- */
+  .section-title { flex-wrap: wrap; }
+
+  /* ---- sheet/modale a tutta larghezza dal basso ---- */
+  .sheet { top: auto; bottom: 0; transform: translate(-50%, 100%); width: 100vw; border-radius: 18px 18px 0 0; max-height: 92vh; padding: 20px 20px max(22px, env(safe-area-inset-bottom)); }
+  .sheet.show { transform: translate(-50%, 0); }
+
+  /* ---- selettori a colonna singola (etichette lunghe) ---- */
   .stpick { grid-template-columns: 1fr; }
+
+  /* ---- calendario e matrice: celle leggibili, colonna nome più stretta ---- */
+  .cal { gap: 5px; }
+  .cal .day { min-height: 44px; }
+  table.matrix .namecol { width: 124px; }
+
+  /* ---- target touch più generosi ---- */
+  .btn.sm { padding: 8px 12px; }
+  .chip { padding: 8px 13px; }
 }
