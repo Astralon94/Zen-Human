@@ -1,10 +1,17 @@
 // ============ Autenticazione lato client ============
 // Stato di sessione del browser: token Bearer in localStorage, utente pubblico e
 // registro permessi (meta). Tutte le fetch dati passano da authFetch(), che inietta
-// l'header Authorization e, su 401, riporta l'app alla schermata di login.
+// l'header Authorization e, su 401, azzera la sessione e notifica i listener registrati
+// (onSessionExpired) invece di ricaricare subito: è la UI a decidere quando ricaricare,
+// così l'utente non perde i dati non ancora salvati che sta scrivendo.
 // Nota: NON si persiste l'utente/meta (solo il token): al reload si ricarica da /me.
 
 const TOKEN_KEY = 'zenhuman_token';
+
+// Pub/sub minimale per la scadenza di sessione (401): la UI si sottoscrive con
+// onSessionExpired() e mostra un avviso bloccante prima di ricaricare la pagina.
+const sessionListeners = new Set();
+export function onSessionExpired(fn) { sessionListeners.add(fn); return () => sessionListeners.delete(fn); }
 
 // Utente pubblico corrente: { id, username, nome, ruolo, permessi[], attivo } o null.
 export let user = null;
@@ -83,7 +90,8 @@ export async function logout() {
 
 // Wrapper di fetch che inietta il Bearer token (se presente), fondendo gli header
 // già passati senza sovrascriverli. Su 401 (fuori dal login) azzera la sessione e
-// ricarica la pagina, riportando alla schermata di login.
+// notifica i listener (onSessionExpired): NON ricarica subito, così la UI può avvisare
+// l'utente ed evitare di perdere dati non ancora salvati che sta scrivendo.
 export async function authFetch(path, opts = {}) {
   const headers = new Headers(opts.headers || {});
   const t = getToken();
@@ -91,7 +99,7 @@ export async function authFetch(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers });
   if (res.status === 401 && !String(path).startsWith('/auth/login') && !String(path).startsWith('/api/auth/login')) {
     clear();
-    if (typeof location !== 'undefined') location.reload();
+    sessionListeners.forEach(fn => { try { fn(); } catch (e) { console.error(e); } });
     throw new Error('Sessione scaduta');
   }
   return res;
