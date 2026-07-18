@@ -14,6 +14,7 @@
   --present-mark: 58%;          /* opacità del segno d'angolo "presenza non confermata" */
   --radius: 16px; --shadow: 0 1px 2px rgba(40,38,32,.04), 0 8px 24px rgba(40,38,32,.05);
   --fs: 15px;
+  --day-gap: 6px;               /* distacco visivo tra i giorni nella griglia Turni (come Zen-Staff) */
 }
 :root[data-theme="dark"] {
   --bg: #12120f; --card: #1a1a16; --card2: #201f1b; --line: #2c2b25;
@@ -274,11 +275,40 @@ table.turni td.tcell.filled.confirmed { cursor: default; }
 table.turni td.tcell .tpill { display: flex; align-items: center; justify-content: center; gap: 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 table.turni td.tcell .tcheck { margin-left: 2px; font-weight: 800; opacity: .9; flex-shrink: 0; }
 table.turni td.tcell.empty:hover { box-shadow: inset 0 0 0 2px var(--accent); }
+/* separazione tra i giorni: una banda-gap sottile sul bordo superiore della PRIMA riga di ogni
+   giorno (tranne il primo visibile). Come in Zen-Staff e coerente con la banda dell'export tabella.
+   Il colore è il fondo pagina (--bg), che stacca leggermente sulla carta della griglia (--card).
+   Non altera l'altezza uniforme (34px) delle celle né i rowspan di Giorno/Altro. */
+table.turni tbody tr.day-first:not(:first-child) > td { border-top: var(--day-gap) solid var(--bg); }
+/* cella "Extra": segnaposto testuale di un collaboratore ESTERNO (non in anagrafica). Pastiglia
+   grigio chiaro con testo scuro, corsivo + bordo tratteggiato per distinguerla a colpo d'occhio
+   dalle pastiglie dipendente. Solo visiva: non è una presenza. */
+table.turni td.tcell.extra { background: var(--card2); }
+table.turni td.tcell.extra .extra-pill {
+  display: flex; align-items: center; justify-content: center; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-style: italic; font-weight: 600; font-size: 11px; color: var(--sub);
+  border: 1px dashed var(--faint); border-radius: 999px; padding: 1px 8px; line-height: 1.5;
+}
+.turni-wrap.painting td.tcell.extra { cursor: pointer; }
+/* popover inline per digitare il nome dell'Extra (ancorato alla cella; mai prompt/alert) */
+.extra-pop { position: fixed; z-index: 60; background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: var(--shadow); padding: 5px; }
+.extra-pop input { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px;
+  font: inherit; font-size: 12.5px; background: var(--card2); color: var(--txt); }
+.extra-pop input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 /* modalità Sposta: pastiglie trascinabili + bersagli con evidenziazione discreta al dragover */
 .turni-wrap.moving td.tcell.movable { cursor: grab; }
 .turni-wrap.moving td.tcell.movable:active { cursor: grabbing; }
 table.turni td.tcell.dragging { opacity: .45; }
 table.turni td.tcell.drag-over { box-shadow: inset 0 0 0 2px var(--accent); }
+/* hover su chip-dipendente: evidenzia le sue celle/pastiglie nel periodo. Solo visuale, altezze fisse
+   (34px): niente bordi, uso box-shadow/outline. Attenua le altre celle occupate; le vuote restano. */
+table.turni td.tcell, .altro-pill { transition: opacity .12s ease, box-shadow .12s ease; }
+.turni-wrap.emp-hover td.tcell.filled:not(.hl) { opacity: .35; }
+.turni-wrap.emp-hover .altro-pill:not(.hl) { opacity: .35; }
+.turni-wrap.emp-hover td.tcell.filled.hl { position: relative; z-index: 3; box-shadow: inset 0 0 0 2px var(--accent), 0 3px 9px rgba(0, 0, 0, .3); }
+.turni-wrap.emp-hover .altro-pill.hl { box-shadow: 0 0 0 2px var(--accent), 0 2px 7px rgba(0, 0, 0, .28); }
 table.turni .altrocol { width: 168px; text-align: left; padding: 0; vertical-align: top; background: var(--card2); }
 /* "Altro" a tendina: il toggle riempie la cella; collassato = riassunto su una riga, espanso = pastiglie */
 .altro-toggle { display: flex; align-items: flex-start; gap: 5px; width: 100%; padding: 6px 8px; background: none; border: 0; text-align: left; cursor: pointer; color: var(--txt); font: inherit; }
@@ -289,10 +319,14 @@ table.turni .altrocol { width: 168px; text-align: left; padding: 0; vertical-ali
 .altro-pill { display: inline-flex; align-items: center; gap: 4px; margin: 2px 3px 2px 0; padding: 2px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; color: #fff; }
 .altro-pill.neutral { background: var(--card); color: var(--sub); border: 1px solid var(--line); }
 .altro-pill .altro-st { font-size: 9px; font-weight: 800; opacity: .85; }
+/* seconda tendina "Da inserire": dipendenti attivi non collocati nel giorno. Sta nella stessa cella
+   Altro (rowspan), sotto la tendina assenze/fuori-griglia, separata da un filetto quando entrambe ci sono. */
+.altrocol .altro-block + .insert-block { border-top: 1px solid var(--line); }
 /* pastiglia dipendente nel pennello (bc-ini condiviso con le chip) */
 .chip.brush-emp { display: inline-flex; align-items: center; gap: 6px; padding-left: 4px; }
 .chip.brush-emp.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .chip.brush-move.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.chip.brush-extra.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 /* griglia di swatch colore (form dipendente): pastiglie cliccabili, selezione con anello accent */
 .swatch-grid { display: flex; flex-wrap: wrap; gap: 7px; }
 .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; box-shadow: 0 0 0 1px var(--line) inset; cursor: pointer; padding: 0; transition: transform .08s ease; }

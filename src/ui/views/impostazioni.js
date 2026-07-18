@@ -13,6 +13,7 @@ const canAziende = () => can('aziende.crea') || can('aziende.modifica') || can('
 
 export function render() {
   const cAspetto = can('impostazioni.manage');   // aspetto (tema)
+  const cTurni = can('turni.configura');          // configurazione turni/ruoli
   const cSoftware = can('software.aggiorna');     // aggiornamento software
   const cExport = can('dati.export');             // esporta backup
   const cImport = can('dati.import');             // importa/sostituisci
@@ -27,7 +28,7 @@ export function render() {
   if (cAziende) { any = true; h += companiesSection(); }
 
   // configurazione turni/ruoli dell'azienda attiva
-  if (cAspetto) { any = true; h += turniConfigSection(); }
+  if (cTurni) { any = true; h += turniConfigSection(); }
 
   if (cAspetto) {
     any = true;
@@ -85,7 +86,7 @@ export function render() {
 
 export function bind(root) {
   if (canAziende()) bindCompanies(root);
-  if (can('impostazioni.manage')) bindTurniConfig(root);
+  if (can('turni.configura')) bindTurniConfig(root);
   root.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { data.settings.theme = b.dataset.th; save(); applyTheme(); });
   root.querySelector('[data-export]')?.addEventListener('click', () => { exportJSON(); toast('Backup esportato ✓'); });
   const impFile = root.querySelector('#imp_file');

@@ -1,6 +1,6 @@
 // ============ Configurazione Turni (sezione dentro Impostazioni) ============
 // Tipi di turno e ruoli vivono nel doc dell'AZIENDA attiva (company.shiftTypes / company.roles).
-// Gate: impostazioni.manage. Editing inline in stile Zen-Human (righe + sheet). L'eliminazione
+// Gate: turni.configura. Editing inline in stile Zen-Human (righe + sheet). L'eliminazione
 // di un tipo di turno / ruolo in uso è BLOCCATA (nessuna cancellazione a cascata sui fatti).
 import { data, save } from '../../state/store.js';
 import { esc, uid } from '../../domain/util.js';

@@ -3,7 +3,7 @@
 // (giorno · turno · ruolo) è un record `attendance` {status:'present', shift:<tipoId>,
 // roleId:<ruoloId>, confirmed:false}. Nessuna collezione nuova. Le presenze CONFERMATE
 // sono bloccate qui: si interviene prima in Presenze togliendo la conferma. Le scritture
-// riusano i permessi presenze.crea/modifica/elimina; la vista è gated da turni.view (nav).
+// hanno permessi propri turni.crea/modifica/elimina; la vista è gated da turni.view (nav).
 import { data, save } from '../../state/store.js';
 import { can } from '../../state/auth.js';
 import { STATUSES, companyShiftTypes, companyRoles, EMPLOYEE_COLOR_FALLBACK } from '../../state/model.js';
@@ -27,9 +27,11 @@ function downloadBlob(name, blob) {
 let viewMode = 'week';               // 'week' | 'range'
 let weekAnchor = todayStr();         // una data dentro la settimana visualizzata (lun–dom)
 let rangeFrom = null, rangeTo = null;
-let brush = null;                    // id dipendente attivo, '__erase', '__move__', oppure null
-const expandedAltro = new Set();     // date con colonna "Altro" espansa (locale al modulo, si perde al cambio vista)
+let brush = null;                    // id dipendente attivo, '__erase', '__extra__', '__move__', oppure null
+const expandedAltro = new Set();     // date con la 1ª tendina "Altro" (assenze/fuori griglia) espansa
+const expandedInsert = new Set();    // date con la 2ª tendina "Da inserire" espansa (indipendente dalla 1ª)
 let dragSrc = null;                  // sorgente del drag in modalità Sposta: {date,shiftId,roleId}
+let extraPop = null;                 // popover inline attivo per il nome di un Extra ({el, onOutside}) o null
 
 // ---- helper intervallo di giorni ----
 function addDays(date, n) {
@@ -84,6 +86,18 @@ function dayRecordOf(cid, empId, date) {
   return data.attendance.find(a => a.companyId === cid && a.employeeId === empId && a.date === date) || null;
 }
 
+// ---- segnaposto "Extra" (collaboratori esterni, dentro il doc dell'azienda) ----
+function extraList(company) { return Array.isArray(company?.extras) ? company.extras : []; }
+// extra assegnato a quella cella (giorno·turno·ruolo); null se assente
+function extraRecord(company, date, shiftId, roleId) {
+  return extraList(company).find(x => x.date === date && x.shift === shiftId && x.roleId === roleId) || null;
+}
+// rimuove un extra dal doc dell'azienda (mutazione in place: il diff granulare lo rileva sul doc company)
+function removeExtra(company, ex) {
+  if (!company || !Array.isArray(company.extras)) return;
+  company.extras = company.extras.filter(x => x !== ex);
+}
+
 export function render() {
   const cid = activeCompany();
   if (!cid) return `<div class="pagehead"><h1>Turni</h1></div><div class="card empty">Crea prima un'azienda dalla sezione Aziende.</div>`;
@@ -132,10 +146,11 @@ export function render() {
   }
   if (!emps.length) { h += `<div class="card empty">Nessun dipendente attivo in questa azienda.</div>`; return h; }
 
-  // barra pennello (scritture = permessi presenze.*)
-  const canCrea = can('presenze.crea');
-  const canDel = can('presenze.elimina');
-  const canPaint = canCrea || canDel;
+  // barra pennello (scritture = permessi turni.*)
+  const canCrea = can('turni.crea');
+  const canDel = can('turni.elimina');
+  const canMove = can('turni.modifica');
+  const canPaint = canCrea || canDel || canMove;
   if (!canPaint) brush = null;
   if (canPaint) {
     const chip = (id, inner, cls = '') => `<button class="chip ${cls} ${brush === id ? 'on' : ''}" data-brush="${id}">${inner}</button>`;
@@ -145,10 +160,12 @@ export function render() {
       return chip(e.id, `<span class="bc-ini" style="background:${esc(c)};color:${pickTextColor(c)}">${esc(initials(e))}</span>${esc(fullName(e))}`, 'brush-emp');
     }).join('');
     if (canDel) chips += chip('__erase', '🧽 Gomma');
-    // Sposta: trascina le pastiglie tra le celle (sposta/scambia); riusa i permessi di scrittura presenze
-    if (canCrea) chips += chip('__move__', '↔️ Sposta', 'brush-move');
+    // Extra: segnaposto testuale per un collaboratore ESTERNO (non in anagrafica); solo visivo. Creazione = turni.crea.
+    if (canCrea) chips += chip('__extra__', '✳️ Extra', 'brush-extra');
+    // Sposta: trascina le pastiglie tra le celle (sposta/scambia); permesso turni.modifica
+    if (canMove) chips += chip('__move__', '↔️ Sposta', 'brush-move');
     h += `<div class="card" style="margin-bottom:8px">
-      <div class="muted" style="font-size:12.5px;margin-bottom:8px">Scegli un dipendente e tocca le celle per assegnarlo al turno·ruolo. Ri-tocca la sua cella per rimuoverlo. Con <b>↔️ Sposta</b> trascini le pastiglie tra le celle (drop su cella occupata = scambio). Le presenze <b>confermate</b> (✓) non si modificano da qui: togli prima la conferma in <b>Presenze</b>.</div>
+      <div class="muted" style="font-size:12.5px;margin-bottom:8px">Scegli un dipendente e tocca le celle per assegnarlo al turno·ruolo. Ri-tocca la sua cella per rimuoverlo. Con <b>✳️ Extra</b> segni una cella coperta da un collaboratore esterno (solo nota, non è una presenza). Con <b>↔️ Sposta</b> trascini le pastiglie tra le celle (drop su cella occupata = scambio). Le presenze <b>confermate</b> (✓) non si modificano da qui: togli prima la conferma in <b>Presenze</b>.</div>
       <div class="chips" style="margin:0">${chips}</div>
     </div>`;
   }
@@ -174,7 +191,7 @@ function gridHTML(cid, company, shifts, roles) {
         ? `<td class="daycol ${d.weekend ? 'wknd' : ''}${d.today ? ' today' : ''}" rowspan="${NS}"><div class="cd-day">${d.day} <span class="cd-dow">${GIORNI[d.dow]}</span>${monTag}</div>${d.today ? '<span class="cd-today">oggi</span>' : ''}</td>`
         : '';
       const shiftCell = `<td class="turnocol"><span class="sh-dot sh-${t.id}"></span>${esc(t.name)}</td>`;
-      const cells = roles.map(r => cellHTML(cid, d.date, t, r, locked)).join('');
+      const cells = roles.map(r => cellHTML(cid, company, d.date, t, r, locked)).join('');
       const altroCell = si === 0 ? altroHTML(cid, company, roles, shifts, d.date) : '';
       return `<tr class="${si === 0 ? 'day-first' : ''}${locked ? ' locked' : ''}">${dayCell}${shiftCell}${cells}${altroCell}</tr>`;
     }).join('');
@@ -188,7 +205,7 @@ function gridHTML(cid, company, shifts, roles) {
 // Lo sfondo è il COLORE del dipendente (non più la scala verde del turno); il testo passa a
 // nero/bianco secondo la luminanza (pickTextColor). In modalità Sposta le celle piene non
 // confermate sono trascinabili (movable) e ogni cella non bloccata è bersaglio di drop (droptarget).
-function cellHTML(cid, date, t, r, locked) {
+function cellHTML(cid, company, date, t, r, locked) {
   const rec = cellRecord(cid, date, t.id, r.id);
   const key = `${date}|${t.id}|${r.id}`;
   const move = brush === '__move__';
@@ -200,7 +217,14 @@ function cellHTML(cid, date, t, r, locked) {
     const fg = pickTextColor(bg);
     const dnd = move && !conf && !locked;   // trascinabile e bersaglio
     const cls = `tcell filled${conf ? ' confirmed' : ''}${dnd ? ' movable droptarget' : ''}`;
-    return `<td class="${cls}" style="background:${bg};color:${fg}" data-cell="${key}"${dnd ? ' draggable="true"' : ''} title="${esc(e ? fullName(e) : '?')} · ${esc(t.name)} · ${esc(r.name)}${conf ? ' · confermata (modifica in Presenze)' : ''}"><span class="tpill">${esc(nm)}${conf ? '<span class="tcheck">✓</span>' : ''}</span></td>`;
+    return `<td class="${cls}" style="background:${bg};color:${fg}" data-cell="${key}" data-emp="${esc(rec.employeeId)}"${dnd ? ' draggable="true"' : ''} title="${esc(e ? fullName(e) : '?')} · ${esc(t.name)} · ${esc(r.name)}${conf ? ' · confermata (modifica in Presenze)' : ''}"><span class="tpill">${esc(nm)}${conf ? '<span class="tcheck">✓</span>' : ''}</span></td>`;
+  }
+  // segnaposto "Extra" (collaboratore esterno): pastiglia grigia, non è una presenza. In modalità Sposta
+  // è un bersaglio (per dare feedback discreto di rifiuto) ma NON è trascinabile.
+  const ex = extraRecord(company, date, t.id, r.id);
+  if (ex) {
+    const drop = move && !locked;
+    return `<td class="tcell extra${locked ? ' locked' : ''}${drop ? ' droptarget' : ''}" data-cell="${key}" title="${esc(ex.name)} · esterno (non in anagrafica) · ${esc(t.name)} · ${esc(r.name)}"><span class="extra-pill">${esc(ex.name)}</span></td>`;
   }
   const drop = move && !locked;
   return `<td class="tcell empty${locked ? ' locked' : ''}${drop ? ' droptarget' : ''}" data-cell="${key}"></td>`;
@@ -213,6 +237,14 @@ function cellHTML(cid, date, t, r, locked) {
 // altre righe resta intatta). Senza contenuto: cella vuota senza freccina.
 function altroHTML(cid, company, roles, shifts, date) {
   const NS = shifts.length;
+  const s1 = altroBlockHTML(cid, roles, shifts, date);   // 1ª tendina: assenze + presenti fuori griglia
+  const s2 = insertBlockHTML(cid, date);                  // 2ª tendina: dipendenti attivi non collocati
+  const inner = (s1 || s2) ? (s1 + s2) : `<span class="muted" style="font-size:11px">—</span>`;
+  return `<td class="altrocol" rowspan="${NS}">${inner}</td>`;
+}
+
+// 1ª tendina "Altro": assenze del giorno + presenti senza cella (no ruolo / non collocabili). '' se vuota.
+function altroBlockHTML(cid, roles, shifts, date) {
   const roleIds = new Set(roles.map(r => r.id));
   const shiftIds = new Set(shifts.map(s => s.id));
   const empSet = new Set(companyEmployees(cid, { includeInactive: true }).map(e => e.id));
@@ -226,14 +258,14 @@ function altroHTML(cid, company, roles, shifts, date) {
       const placed = a.roleId && roleIds.has(a.roleId) && shiftIds.has(a.shift);
       if (placed) continue;
       nOut++;
-      pills.push(`<span class="altro-pill neutral" title="${esc(fullName(e))} · presente (senza ruolo)">${esc(shortName(e))}</span>`);
+      pills.push(`<span class="altro-pill neutral" data-emp="${esc(e.id)}" title="${esc(fullName(e))} · presente (senza ruolo)">${esc(shortName(e))}</span>`);
     } else {
       const s = statusInfo(a.status);
       nAbs++;
-      pills.push(`<span class="altro-pill" style="background:${s.color}" title="${esc(fullName(e))} · ${esc(s.label)}">${esc(shortName(e))}<span class="altro-st">${s.short}</span></span>`);
+      pills.push(`<span class="altro-pill" data-emp="${esc(e.id)}" style="background:${s.color}" title="${esc(fullName(e))} · ${esc(s.label)}">${esc(shortName(e))}<span class="altro-st">${s.short}</span></span>`);
     }
   }
-  if (!pills.length) return `<td class="altrocol" rowspan="${NS}"><span class="muted" style="font-size:11px">—</span></td>`;
+  if (!pills.length) return '';
   const open = expandedAltro.has(date);
   const parts = [];
   if (nAbs) parts.push(`${nAbs} assenz${nAbs === 1 ? 'a' : 'e'}`);
@@ -242,9 +274,31 @@ function altroHTML(cid, company, roles, shifts, date) {
   const inner = open
     ? `<div class="altro-pills">${pills.join('')}</div>`
     : `<span class="altro-sum">${esc(summary)}</span>`;
-  return `<td class="altrocol${open ? ' open' : ''}" rowspan="${NS}">
+  return `<div class="altro-block${open ? ' open' : ''}">
     <button type="button" class="altro-toggle" data-altro="${date}" title="${open ? 'Comprimi' : 'Espandi'}"><span class="altro-caret">${open ? '▾' : '▸'}</span>${inner}</button>
-  </td>`;
+  </div>`;
+}
+
+// 2ª tendina "Da inserire": dipendenti ATTIVI dell'azienda senza ALCUN record attendance nel giorno
+// (né turno/presenza né assenza). Gli Extra (esterni) NON contano come collocazione. Sola lettura.
+// '' se sono tutti collocati (colonna pulita). Espandendola si allungano solo le righe di quel giorno.
+function insertBlockHTML(cid, date) {
+  const active = companyEmployees(cid);   // attivi
+  if (!active.length) return '';
+  const placed = new Set(data.attendance.filter(a => a.companyId === cid && a.date === date).map(a => a.employeeId));
+  const missing = active.filter(e => !placed.has(e.id));
+  if (!missing.length) return '';
+  const open = expandedInsert.has(date);
+  const pills = missing.map(e => {
+    const c = e.color || EMPLOYEE_COLOR_FALLBACK;
+    return `<span class="altro-pill" data-emp="${esc(e.id)}" style="background:${esc(c)};color:${pickTextColor(c)}" title="${esc(fullName(e))} · da inserire">${esc(shortName(e))}</span>`;
+  }).join('');
+  const inner = open
+    ? `<div class="altro-pills">${pills}</div>`
+    : `<span class="altro-sum">${missing.length} da inserire</span>`;
+  return `<div class="insert-block${open ? ' open' : ''}">
+    <button type="button" class="altro-toggle" data-insert="${date}" title="${open ? 'Comprimi' : 'Espandi'}"><span class="altro-caret">${open ? '▾' : '▸'}</span>${inner}</button>
+  </div>`;
 }
 
 export function bind(root) {
@@ -301,7 +355,41 @@ export function bind(root) {
     regrid(root);
   });
 
+  bindChipHover(root);
   bindGrid(root, cid);
+}
+
+// Passaggio del mouse su un chip-dipendente: evidenzia nella griglia (e nella colonna "Altro"
+// visibile) tutte le celle/pastiglie dove quel dipendente compare nel periodo mostrato.
+// Solo visuale: nessun cambio di stato. Delegation sul contenitore dei chip; le celle-bersaglio
+// portano un attributo data-emp (aggiunto al render), niente listener per singola cella.
+function bindChipHover(root) {
+  const chipsWrap = root.querySelector('.chips');
+  const twrap = root.querySelector('#twrap');
+  if (!chipsWrap || !twrap) return;
+  let cur = null;
+  const clear = () => {
+    if (cur == null) return;
+    twrap.classList.remove('emp-hover');
+    twrap.querySelectorAll('.hl').forEach(el => el.classList.remove('hl'));
+    cur = null;
+  };
+  const apply = empId => {
+    if (dragSrc) return;                 // durante un drag attivo l'evidenziazione è sospesa
+    if (empId === cur) return;
+    clear();
+    const nodes = twrap.querySelectorAll(`[data-emp="${empId}"]`);
+    if (!nodes.length) return;           // nessuna cella: non attenuare inutilmente le altre
+    twrap.classList.add('emp-hover');
+    nodes.forEach(el => el.classList.add('hl'));
+    cur = empId;
+  };
+  chipsWrap.addEventListener('mouseover', ev => {
+    const chip = ev.target.closest('.brush-emp');
+    if (!chip || !chipsWrap.contains(chip)) { clear(); return; }
+    apply(chip.dataset.brush);
+  });
+  chipsWrap.addEventListener('mouseleave', clear);
 }
 
 // (ri)aggancia gli handler della sola griglia: click celle, toggle "Altro", drag&drop
@@ -310,8 +398,9 @@ function bindGrid(root, cid) {
   if (wrap) wrap.className = `turni-wrap ${wrapMode()}`;
   root.querySelectorAll('td.tcell').forEach(td => td.onclick = () => onCellClick(cid, td, root));
   root.querySelectorAll('.altro-toggle').forEach(b => b.onclick = () => {
-    const d = b.dataset.altro;
-    if (expandedAltro.has(d)) expandedAltro.delete(d); else expandedAltro.add(d);
+    // due tendine indipendenti nella stessa cella Altro: assenze/fuori-griglia (data-altro) e "da inserire" (data-insert)
+    if (b.dataset.altro != null) { const d = b.dataset.altro; expandedAltro.has(d) ? expandedAltro.delete(d) : expandedAltro.add(d); }
+    else if (b.dataset.insert != null) { const d = b.dataset.insert; expandedInsert.has(d) ? expandedInsert.delete(d) : expandedInsert.add(d); }
     regrid(root);
   });
   bindDnd(root, cid);
@@ -319,6 +408,7 @@ function bindGrid(root, cid) {
 
 // ricostruisce SOLO la griglia (#twrap) preservando lo scroll, e riaggancia gli handler.
 function regrid(root) {
+  closeExtraInput();
   const cid = activeCompany();
   if (!cid) return;
   const company = co(cid);
@@ -367,6 +457,8 @@ function dropOnCell(cid, dst, td, root) {
   const srcRec = cellRecord(cid, src.date, src.shiftId, src.roleId);
   if (!srcRec || srcRec.confirmed !== false) { nudge(td, 'Turno non spostabile'); return; }
   if (isMonthLocked(cid, src.date.slice(0, 7)) || isMonthLocked(cid, dst.date.slice(0, 7))) { nudge(td, 'Mese chiuso: non modificabile'); return; }
+  // la destinazione è un segnaposto Extra (esterno): lo Sposta lo ignora, drop bloccato con feedback discreto
+  if (extraRecord(co(cid), dst.date, dst.shiftId, dst.roleId)) { nudge(td, 'Cella occupata da un Extra: usa ✳️ o 🧽'); return; }
   const dstRec = cellRecord(cid, dst.date, dst.shiftId, dst.roleId);
   if (dstRec && dstRec.confirmed !== false) { nudge(td, 'Cella con presenza confermata: non modificabile'); return; }
   const sameDay = src.date === dst.date;
@@ -402,32 +494,44 @@ function nudge(td, msg) {
 
 function onCellClick(cid, td, root) {
   if (brush === '__move__') return;   // in modalità Sposta si interagisce solo via drag&drop
-  const [date, shiftId, roleId] = td.dataset.cell.split('|');
+  const key = td.dataset.cell;
+  const [date, shiftId, roleId] = key.split('|');
   const month = date.slice(0, 7);
+  const company = co(cid);
   const rec = cellRecord(cid, date, shiftId, roleId);
+  const extra = rec ? null : extraRecord(company, date, shiftId, roleId);  // rec e extra sono mutuamente esclusivi per costruzione
 
   // cella confermata: mai modificabile da qui
   if (rec && rec.confirmed !== false) { nudge(td, 'Presenza confermata: togli la conferma in Presenze'); return; }
 
   if (isMonthLocked(cid, month)) { nudge(td, 'Mese chiuso: non modificabile'); return; }
 
-  // gomma: rimuove la presenza non confermata della cella
+  // gomma: rimuove la presenza non confermata OPPURE il segnaposto Extra della cella
   if (brush === '__erase') {
-    if (!can('presenze.elimina')) return;
-    if (rec) { data.attendance = data.attendance.filter(a => a !== rec); save(); rerender(root); }
+    if (!can('turni.elimina')) return;
+    if (rec) { data.attendance = data.attendance.filter(a => a !== rec); save(); rerender(root); return; }
+    if (extra) { removeExtra(company, extra); save(); regrid(root); }
+    return;
+  }
+
+  // pennello Extra: apre l'input inline sulla cella (nuovo o modifica di uno esistente). Mai su cella con dipendente.
+  if (brush === '__extra__') {
+    if (!can('turni.crea')) return;
+    if (rec) { nudge(td, 'Cella occupata da un dipendente'); return; }
+    openExtraInput(cid, td, key, extra, root);
     return;
   }
 
   // nessun pennello: niente da fare (le celle confermate hanno già dato feedback sopra)
-  if (!brush) { if (rec) nudge(td); return; }
+  if (!brush) { if (rec || extra) nudge(td); return; }
 
   // pennello = dipendente
   const e = emp(brush); if (!e) return;
-  if (!can('presenze.crea')) return;
+  if (!can('turni.crea')) return;
 
   // ri-clic sulla propria cella non confermata → rimuove
   if (rec && rec.employeeId === brush) {
-    if (!can('presenze.elimina')) { nudge(td, 'Non hai il permesso di rimuovere'); return; }
+    if (!can('turni.elimina')) { nudge(td, 'Non hai il permesso di rimuovere'); return; }
     data.attendance = data.attendance.filter(a => a !== rec); save(); rerender(root); return;
   }
 
@@ -443,14 +547,71 @@ function onCellClick(cid, td, root) {
     if (ex.status !== 'present') { nudge(td, `${fullName(e)} ha già "${statusInfo(ex.status).label}" quel giorno`); return; }
     if (ex.confirmed !== false) { nudge(td, `${fullName(e)} ha una presenza confermata quel giorno`); return; }
     // presenza non confermata altrove → SPOSTA (aggiorna turno/ruolo)
+    if (extra) removeExtra(company, extra);   // il titolare del turno "è arrivato": l'Extra lascia il posto
     ex.shift = shiftId; ex.roleId = roleId;
   } else {
+    if (extra) removeExtra(company, extra);
     data.attendance.push({ id: uid(), companyId: cid, employeeId: brush, date, status: 'present', amount: 0, shift: shiftId, shiftBonus: 0, roleId, confirmed: false, note: '' });
   }
   save(); rerender(root);
 }
 
+// ---- Extra: input inline ancorato alla cella (mai prompt/alert) ----
+// Chiude il popover Extra eventualmente aperto e stacca il listener di click-fuori.
+function closeExtraInput() {
+  if (!extraPop) return;
+  document.removeEventListener('mousedown', extraPop.onOutside, true);
+  extraPop.el.remove();
+  extraPop = null;
+}
+// Apre un piccolo input sopra la cella per digitare/modificare il nome dell'Extra. Invio conferma,
+// Esc/click-fuori annulla. Alla conferma salva il segnaposto nel doc dell'azienda e ridisegna la griglia.
+function openExtraInput(cid, td, key, existing, root) {
+  closeExtraInput();
+  const [date, shiftId, roleId] = key.split('|');
+  const company = co(cid);
+  const el = document.createElement('div');
+  el.className = 'extra-pop';
+  el.innerHTML = `<input type="text" maxlength="40" placeholder="Nome esterno" value="${esc(existing?.name || '')}">`;
+  document.body.appendChild(el);
+  // posizionamento ancorato alla cella (position:fixed → coordinate viewport)
+  const r = td.getBoundingClientRect();
+  const w = Math.max(150, r.width);
+  el.style.width = `${w}px`;
+  let left = r.left; if (left + w > window.innerWidth - 8) left = window.innerWidth - 8 - w;
+  el.style.left = `${Math.max(8, left)}px`;
+  el.style.top = `${Math.min(window.innerHeight - 52, r.top)}px`;
+  const inp = el.querySelector('input');
+
+  const commit = () => {
+    const name = inp.value.trim();
+    closeExtraInput();
+    if (!can('turni.crea')) return;
+    if (isMonthLocked(cid, date.slice(0, 7))) { nudge(td, 'Mese chiuso: non modificabile'); return; }
+    if (!name) return;                       // vuoto = nessuna modifica (annulla di fatto)
+    if (existing) {
+      if (existing.name === name) return;    // nessun cambiamento
+      existing.name = name;
+    } else {
+      if (!Array.isArray(company.extras)) company.extras = [];
+      company.extras.push({ id: uid(), date, shift: shiftId, roleId, name });
+    }
+    save(); regrid(root);
+  };
+
+  const onOutside = ev => { if (extraPop && !extraPop.el.contains(ev.target)) closeExtraInput(); };
+  extraPop = { el, onOutside };
+  inp.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); closeExtraInput(); }
+  });
+  // il click-fuori annulla; in cattura per intercettare prima degli altri handler
+  setTimeout(() => document.addEventListener('mousedown', onOutside, true), 0);
+  inp.focus(); inp.select();
+}
+
 function rerender(root) {
+  closeExtraInput();
   root.innerHTML = render();
   bind(root);
 }

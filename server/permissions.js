@@ -41,8 +41,12 @@ export const PERMISSIONS = [
   { key: 'presenze.elimina',    group: 'Presenze',       label: 'Svuotare le giornate di presenza', write: true },
   { key: 'mese.chiusura',       group: 'Presenze',       label: 'Chiudere e riaprire i mesi (blocca le modifiche)', write: true },
 
-  // ---- Turni (pianificazione) — le scritture riusano i permessi presenze.* ----
+  // ---- Turni (pianificazione) — permessi propri, separati dalle Presenze ----
   { key: 'turni.view',          group: 'Turni',          label: 'Vedere la griglia di pianificazione dei turni' },
+  { key: 'turni.crea',          group: 'Turni',          label: 'Pianificare i turni (pennello)', write: true },
+  { key: 'turni.modifica',      group: 'Turni',          label: 'Spostare e scambiare i turni (modalità Sposta)', write: true },
+  { key: 'turni.elimina',       group: 'Turni',          label: 'Rimuovere i turni pianificati (gomma)', write: true },
+  { key: 'turni.configura',     group: 'Turni',          label: 'Gestire ruoli e tipi di turno (Impostazioni)', write: true },
 
   // ---- Retribuzioni (voci economiche) ----
   { key: 'voci.view',           group: 'Retribuzioni',   label: 'Consultare le voci economiche (bonus, sanzioni, acconti)' },
@@ -84,7 +88,7 @@ export const NAV = [
   { key: 'dip',    icon: '👤', label: 'Dipendenti',       perm: 'dipendenti.view' },
   { key: 'sca',    icon: '⏳', label: 'Scadenze',         perm: 'scadenze.view' },
   { key: 'utenti', icon: '👥', label: 'Utenti',           perm: 'utenti.manage' },
-  { key: 'set',    icon: '⚙',  label: 'Impostazioni',     perm: 'impostazioni.manage', any: ['impostazioni.manage', 'software.aggiorna', 'dati.export', 'dati.import', 'dati.reset', 'aziende.crea', 'aziende.modifica', 'aziende.elimina'] },
+  { key: 'set',    icon: '⚙',  label: 'Impostazioni',     perm: 'impostazioni.manage', any: ['impostazioni.manage', 'software.aggiorna', 'dati.export', 'dati.import', 'dati.reset', 'aziende.crea', 'aziende.modifica', 'aziende.elimina', 'turni.configura'] },
 ];
 
 // Permessi che abilitano la scrittura dei DATI (collezioni). Derivati da `write`.

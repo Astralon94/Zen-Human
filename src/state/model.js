@@ -15,8 +15,11 @@ export const DEFAULT_DATA = () => ({
   //   lockedMonths:['YYYY-MM'] (mesi "chiusi", inviati al consulente: presenze/voci di quel mese non modificabili),
   //   shiftTypes:[{id,name,start:'HH:MM',end:'HH:MM'}] (tipi di turno configurabili; ordine array = ordine righe
   //     e scala colore in Turni; gli id 'mattina'/'pomeriggio'/'notte' coincidono coi valori legacy di attendance.shift),
-  //   roles:[{id,name,acronym}] (ruoli/mansioni; ordine array = ordine colonne in Turni; acronym max 4 maiuscolo)}
-  companies: [{ id: 'co1', name: 'Azienda 1', emoji: '🏢', color: '#4f8a76', piva: '', cf: '', note: '', lockedMonths: [], shiftTypes: DEFAULT_SHIFT_TYPES(), roles: [] }],
+  //   roles:[{id,name,acronym}] (ruoli/mansioni; ordine array = ordine colonne in Turni; acronym max 4 maiuscolo),
+  //   extras:[{id,date:'YYYY-MM-DD',shift:<tipoId>,roleId,name}] (segnaposto testuali "Extra" in Turni: una cella
+  //     giorno·turno·ruolo coperta da un collaboratore ESTERNO non in anagrafica; SOLO visivo — non crea presenze,
+  //     non entra in conteggi/netto)}
+  companies: [{ id: 'co1', name: 'Azienda 1', emoji: '🏢', color: '#4f8a76', piva: '', cf: '', note: '', lockedMonths: [], shiftTypes: DEFAULT_SHIFT_TYPES(), roles: [], extras: [] }],
   // dipendenti: {id,companyId,firstName,lastName,role,emoji,active,createdAt,
   //   contract (tipo contratto, testo libero), contractStart/contractEnd/contractOpen (scadenza contratto),
   //   librettoSanitario ('YYYY-MM-DD'|'' scadenza libretto sanitario),
@@ -145,6 +148,8 @@ export function migrate(d) {
     if (!Array.isArray(c.lockedMonths)) c.lockedMonths = [];
     if (!Array.isArray(c.shiftTypes) || !c.shiftTypes.length) c.shiftTypes = DEFAULT_SHIFT_TYPES();
     if (!Array.isArray(c.roles)) c.roles = [];
+    // segnaposto "Extra" (collaboratori esterni non in anagrafica) per la griglia Turni: solo visivi.
+    if (!Array.isArray(c.extras)) c.extras = [];
   });
   // colore identificativo del dipendente (usato come sfondo nella griglia Turni). Chi non ce l'ha
   // (archivi pre-esistenti) riceve una tinta distinta a rotazione dalla palette, così i dipendenti

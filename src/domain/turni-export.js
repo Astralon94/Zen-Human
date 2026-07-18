@@ -27,6 +27,7 @@ const C = {
   wknd:    '#f1efe9',   // ombreggiatura weekend (~ --line al 40% su carta)
   accent:  '#4f8a76',   // --accent (salvia)
   hair:    '#f0ede7',   // riga interna sottile
+  extra:   '#e6e3dd',   // fondo pastiglia "Extra" (collaboratore esterno): grigio chiaro
 };
 // Estremi della scala verdi dei tipi di turno (token --present-scale-* / --present-fg-dark, tema light).
 const SH = { light: '#7cb6a0', dark: '#2c5344', fgDark: '#234438' };
@@ -34,8 +35,8 @@ const SH = { light: '#7cb6a0', dark: '#2c5344', fgDark: '#234438' };
 const font = "font-family='-apple-system,Segoe UI,Roboto,Arial,sans-serif'";
 const rect = (x, y, w, h, fill, extra = '') => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" ${extra}/>`;
 const line = (x1, y1, x2, y2, col = C.line, sw = 1) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${sw}"/>`;
-function text(x, y, s, { size = 12, fill = C.txt, weight = 400, anchor = 'start' } = {}) {
-  return `<text x="${x}" y="${y}" ${font} font-size="${size}" fill="${fill}" font-weight="${weight}" text-anchor="${anchor}">${esc(s)}</text>`;
+function text(x, y, s, { size = 12, fill = C.txt, weight = 400, anchor = 'start', italic = false } = {}) {
+  return `<text x="${x}" y="${y}" ${font} font-size="${size}" fill="${fill}" font-weight="${weight}" text-anchor="${anchor}"${italic ? " font-style='italic'" : ''}>${esc(s)}</text>`;
 }
 
 // ---- date/etichette ----
@@ -113,6 +114,11 @@ function cellRecord(cid, date, shiftId, roleId) {
   return data.attendance.find(a =>
     a.companyId === cid && a.date === date && a.status === 'present' && a.shift === shiftId && a.roleId === roleId) || null;
 }
+// segnaposto "Extra" (collaboratore esterno) assegnato a (giorno·turno·ruolo) dell'azienda
+function extraRecord(company, date, shiftId, roleId) {
+  const list = Array.isArray(company?.extras) ? company.extras : [];
+  return list.find(x => x.date === date && x.shift === shiftId && x.roleId === roleId) || null;
+}
 // turni 'present' del dipendente nel periodo (ordinati per data, poi ordine dei tipi di turno)
 function employeeShifts(cid, empId, dates, shifts) {
   const dset = new Set(dates);
@@ -180,6 +186,13 @@ function buildTableSVG(company, shifts, roles, days, meta) {
           const bg = e.color || EMPLOYEE_COLOR_FALLBACK;
           s += rect(rx + 1, ry + 1, wRole - 2, rowH - 2, bg);
           s += text(rx + wRole / 2, ry + rowH / 2 + 4, fullName(e), { size: 9.5, weight: 700, fill: pickTextColor(bg), anchor: 'middle' });
+        } else {
+          // segnaposto "Extra": cella grigio chiaro col nome dell'esterno, in corsivo per distinguerlo
+          const ex = extraRecord(company, date, t.id, r.id);
+          if (ex) {
+            s += rect(rx + 1, ry + 1, wRole - 2, rowH - 2, C.extra);
+            s += text(rx + wRole / 2, ry + rowH / 2 + 4, ex.name, { size: 9.5, weight: 600, fill: C.txt, anchor: 'middle', italic: true });
+          }
         }
         rx += wRole;
       });

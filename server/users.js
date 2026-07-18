@@ -49,6 +49,39 @@ export function seedAdminIfEmpty() {
   return { seeded: true };
 }
 
+// Migrazione una-tantum (idempotente): separa i permessi dei Turni da quelli di
+// Presenze/Impostazioni. Prima le scritture della griglia Turni e la configurazione
+// ruoli/tipi riusavano presenze.*/impostazioni.manage; ora hanno permessi propri.
+// Per NON togliere capacità a chi già lavora, a ogni operatore standard che possiede
+// il vecchio permesso si aggiunge (se manca) quello nuovo equivalente. Gli admin hanno
+// già tutto: non serve toccarli. Rieseguirla non produce alcun cambiamento.
+const MIGRA_TURNI = [
+  ['presenze.crea', 'turni.crea'],
+  ['presenze.modifica', 'turni.modifica'],
+  ['presenze.elimina', 'turni.elimina'],
+  ['impostazioni.manage', 'turni.configura'],
+];
+export function migraPermessiTurni() {
+  const rows = db.prepare("SELECT id, permessi FROM utenti WHERE ruolo='standard'").all();
+  let aggiornati = 0;
+  for (const r of rows) {
+    let perms;
+    try { perms = JSON.parse(r.permessi || '[]'); } catch { perms = []; }
+    if (!Array.isArray(perms)) perms = [];
+    const set = new Set(perms);
+    let changed = false;
+    for (const [vecchio, nuovo] of MIGRA_TURNI) {
+      if (set.has(vecchio) && !set.has(nuovo)) { set.add(nuovo); changed = true; }
+    }
+    if (changed) {
+      db.prepare('UPDATE utenti SET permessi=? WHERE id=?').run(JSON.stringify([...set]), r.id);
+      aggiornati++;
+    }
+  }
+  if (aggiornati) console.log(`[auth] migrazione permessi Turni: aggiornati ${aggiornati} operator${aggiornati === 1 ? 'e' : 'i'}.`);
+  return { aggiornati };
+}
+
 export function verifyLogin(username, password) {
   const u = findByUsernameAttivo(username);
   if (!u || !verifyPassword(password || '', u.password_hash)) return null;

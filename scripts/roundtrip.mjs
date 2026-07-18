@@ -17,6 +17,8 @@ const sample = {
       { id: 'notte', name: 'Notte', start: '22:00', end: '06:00' },
     ],
     roles: [{ id: 'r1', name: 'Banconista', acronym: 'BANC' }, { id: 'r2', name: 'Cassa', acronym: 'CASS' }],
+    // segnaposto "Extra" (collaboratore esterno): solo visivo, viaggia nel doc dell'azienda
+    extras: [{ id: 'ex1', date: '2026-06-30', shift: 'pomeriggio', roleId: 'r2', name: 'Luca (agenzia)' }],
   }],
   employees: [{
     id: 'e1', companyId: 'co1', firstName: 'Mario', lastName: 'Rossi', role: 'Banconista', color: '#4f8a76',

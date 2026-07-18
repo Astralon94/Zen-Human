@@ -11,7 +11,7 @@ import { putAttachment, getAttachment, deleteAttachment } from './server/attachm
 import { createSession, getSession, destroySession, destroySessionsOfUser, verifyPassword } from './server/auth.js';
 import { PERMISSIONS, NAV, RUOLI, hasPermission, canWriteData, assegnabili } from './server/permissions.js';
 import {
-  seedAdminIfEmpty, verifyLogin, utentePubblico, getByIdAttivo, setPassword,
+  seedAdminIfEmpty, migraPermessiTurni, verifyLogin, utentePubblico, getByIdAttivo, setPassword,
   listPublic, create as createUser, update as updateUser, remove as removeUser,
 } from './server/users.js';
 
@@ -286,6 +286,7 @@ async function serveStatic(req, res, url) {
 
 seedIfEmpty();       // primo avvio: DB vuoto → dati di default
 seedAdminIfEmpty();  // primo avvio (o DB pre-multiutenza): crea admin/admin se non ci sono utenti
+migraPermessiTurni(); // una-tantum idempotente: separa i permessi Turni da Presenze/Impostazioni
 
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
