@@ -100,6 +100,33 @@ export const ENTRY_KINDS = {
   advance: { label: 'Acconto', emoji: '💶', sign: -1, color: '#c98a52' }
 };
 
+// ---- Palette colori dipendente ----
+// Tinte "zen" desaturate/armoniche (mix di chiare e scure), pensate per identificare a colpo
+// d'occhio ogni dipendente nella griglia Turni. Il contrasto del testo (nero/bianco) è scelto
+// a runtime da pickTextColor() in domain/util.js secondo la luminanza dello sfondo, quindi la
+// palette può contenere tinte sia chiare sia scure senza problemi di leggibilità.
+// Le prime 24 sono la ruota di Zen-Staff (armonizzata sui token --green/--red/--orange/--blue/
+// --purple); le 16 successive estendono la gamma con tinte più profonde e alcune più chiare,
+// mantenendo buona distinguibilità reciproca.
+export const EMPLOYEE_COLORS = [
+  '#8B5060', '#A56850', '#BC8C52', '#B19E77', '#9E8B3D', '#9B9959',
+  '#9EB15D', '#65C3A0', '#479485', '#45A0B0', '#6788A8', '#6E9DB9',
+  '#5F508B', '#9650A5', '#BC5278', '#B1779B', '#9E3D5E', '#9B6759',
+  '#B16E5D', '#C39665', '#948147', '#5CB045', '#A8A867', '#B96E6E',
+  '#3E6E63', '#4A5C7A', '#6B6F80', '#4C3F6E', '#8A7A66', '#6E7340',
+  '#C08497', '#8FB89E', '#7FA9C9', '#A99BC4', '#A9803E', '#4F7A4A',
+  '#8E6B84', '#B8A55C', '#5FA6A0', '#C77D6D'
+];
+// Colore di fallback per un dipendente senza tinta assegnata (grigio neutro).
+export const EMPLOYEE_COLOR_FALLBACK = '#a8a59d';
+// Prossima tinta da assegnare a un nuovo dipendente: la prima non ancora usata (per massima
+// distinguibilità), altrimenti si ruota sulla palette in base al numero di dipendenti.
+export function nextEmployeeColor(employees) {
+  const used = new Set((employees || []).map(e => e && e.color).filter(Boolean));
+  for (const c of EMPLOYEE_COLORS) if (!used.has(c)) return c;
+  return EMPLOYEE_COLORS[(employees?.length || 0) % EMPLOYEE_COLORS.length];
+}
+
 // Normalizza/ripara un archivio caricato (difensivo, non distruttivo).
 export function migrate(d) {
   if (!d || typeof d !== 'object') return DEFAULT_DATA();
@@ -118,6 +145,13 @@ export function migrate(d) {
     if (!Array.isArray(c.lockedMonths)) c.lockedMonths = [];
     if (!Array.isArray(c.shiftTypes) || !c.shiftTypes.length) c.shiftTypes = DEFAULT_SHIFT_TYPES();
     if (!Array.isArray(c.roles)) c.roles = [];
+  });
+  // colore identificativo del dipendente (usato come sfondo nella griglia Turni). Chi non ce l'ha
+  // (archivi pre-esistenti) riceve una tinta distinta a rotazione dalla palette, così i dipendenti
+  // già presenti restano ben distinguibili senza intervento manuale.
+  let colorRot = d.employees.filter(e => e && e.color).length;
+  d.employees.forEach(e => {
+    if (e.color == null || e.color === '') { e.color = EMPLOYEE_COLORS[colorRot % EMPLOYEE_COLORS.length]; colorRot++; }
   });
   d.employees.forEach(e => {
     if (!Array.isArray(e.salaries)) e.salaries = [];

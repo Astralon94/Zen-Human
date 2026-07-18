@@ -263,21 +263,41 @@ table.turni .cd-today { display: inline-block; font-size: 9px; font-weight: 800;
 table.turni .turnocol { width: 108px; text-align: left; padding: 6px 10px; font-weight: 600; color: var(--txt); white-space: nowrap; }
 table.turni .sh-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; background: var(--sh-bg, var(--present-none)); }
 table.turni .sh-dot.sh-none { background: var(--present-none); }
-table.turni td.tcell { height: 34px; padding: 3px 4px; cursor: pointer; vertical-align: middle; }
+/* altezza di riga uniforme: ogni cella turno·ruolo è alta esattamente 34px, il contenuto (pastiglia)
+   si adatta con ellipsis. Così righe vuote, occupate e bloccate restano allineate. */
+table.turni td.tcell { height: 34px; padding: 3px 4px; cursor: pointer; vertical-align: middle; overflow: hidden; }
 table.turni td.tcell.empty { background: var(--card); }
 table.turni td.tcell.empty.locked { background: color-mix(in srgb, var(--line) 30%, transparent); cursor: not-allowed; }
-table.turni td.tcell.filled { background: var(--sh-bg, var(--present-none)); color: var(--sh-fg, var(--present-none-fg)); font-weight: 700; font-size: 11px; position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-table.turni td.tcell.filled.sh-none { background: var(--present-none); color: var(--present-none-fg); }
+/* cella occupata: lo sfondo è il COLORE del dipendente (inline), il testo bianco/nero via pickTextColor */
+table.turni td.tcell.filled { font-weight: 700; font-size: 11px; position: relative; }
 table.turni td.tcell.filled.confirmed { cursor: default; }
-table.turni td.tcell .tcheck { margin-left: 4px; font-weight: 800; opacity: .9; }
+table.turni td.tcell .tpill { display: flex; align-items: center; justify-content: center; gap: 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.turni td.tcell .tcheck { margin-left: 2px; font-weight: 800; opacity: .9; flex-shrink: 0; }
 table.turni td.tcell.empty:hover { box-shadow: inset 0 0 0 2px var(--accent); }
-table.turni .altrocol { width: 150px; text-align: left; padding: 6px 8px; vertical-align: top; background: var(--card2); }
+/* modalità Sposta: pastiglie trascinabili + bersagli con evidenziazione discreta al dragover */
+.turni-wrap.moving td.tcell.movable { cursor: grab; }
+.turni-wrap.moving td.tcell.movable:active { cursor: grabbing; }
+table.turni td.tcell.dragging { opacity: .45; }
+table.turni td.tcell.drag-over { box-shadow: inset 0 0 0 2px var(--accent); }
+table.turni .altrocol { width: 168px; text-align: left; padding: 0; vertical-align: top; background: var(--card2); }
+/* "Altro" a tendina: il toggle riempie la cella; collassato = riassunto su una riga, espanso = pastiglie */
+.altro-toggle { display: flex; align-items: flex-start; gap: 5px; width: 100%; padding: 6px 8px; background: none; border: 0; text-align: left; cursor: pointer; color: var(--txt); font: inherit; }
+.altro-toggle .altro-caret { color: var(--sub); font-size: 10px; line-height: 1.5; flex-shrink: 0; }
+.altro-toggle .altro-sum { font-size: 11px; color: var(--sub); font-weight: 600; line-height: 1.4; }
+.altro-toggle:hover .altro-sum, .altro-toggle:hover .altro-caret { color: var(--accent); }
+.altro-toggle .altro-pills { display: flex; flex-wrap: wrap; }
 .altro-pill { display: inline-flex; align-items: center; gap: 4px; margin: 2px 3px 2px 0; padding: 2px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; color: #fff; }
 .altro-pill.neutral { background: var(--card); color: var(--sub); border: 1px solid var(--line); }
 .altro-pill .altro-st { font-size: 9px; font-weight: 800; opacity: .85; }
 /* pastiglia dipendente nel pennello (bc-ini condiviso con le chip) */
 .chip.brush-emp { display: inline-flex; align-items: center; gap: 6px; padding-left: 4px; }
 .chip.brush-emp.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.chip.brush-move.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+/* griglia di swatch colore (form dipendente): pastiglie cliccabili, selezione con anello accent */
+.swatch-grid { display: flex; flex-wrap: wrap; gap: 7px; }
+.swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; box-shadow: 0 0 0 1px var(--line) inset; cursor: pointer; padding: 0; transition: transform .08s ease; }
+.swatch:hover { transform: scale(1.1); }
+.swatch.on { border-color: var(--txt); box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--accent); }
 .bc-ini { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 10px; font-weight: 800; flex-shrink: 0; }
 /* feedback discreto: shake sulle azioni bloccate */
 @keyframes tk-shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }

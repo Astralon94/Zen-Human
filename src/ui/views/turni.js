@@ -6,9 +6,9 @@
 // riusano i permessi presenze.crea/modifica/elimina; la vista è gated da turni.view (nav).
 import { data, save } from '../../state/store.js';
 import { can } from '../../state/auth.js';
-import { STATUSES, companyShiftTypes, companyRoles } from '../../state/model.js';
+import { STATUSES, companyShiftTypes, companyRoles, EMPLOYEE_COLOR_FALLBACK } from '../../state/model.js';
 import {
-  esc, uid, fullName, initials, shiftMonth, pad2, todayStr, fmtDateFull, GIORNI, MESI, weekdayMon0
+  esc, uid, fullName, initials, shiftMonth, pad2, todayStr, fmtDateFull, GIORNI, MESI, weekdayMon0, pickTextColor
 } from '../../domain/util.js';
 import { activeCompany, co, emp, companyEmployees, statusInfo, isMonthLocked } from '../../domain/payroll.js';
 import { injectShiftScale } from '../shiftcolors.js';
@@ -27,7 +27,9 @@ function downloadBlob(name, blob) {
 let viewMode = 'week';               // 'week' | 'range'
 let weekAnchor = todayStr();         // una data dentro la settimana visualizzata (lun–dom)
 let rangeFrom = null, rangeTo = null;
-let brush = null;                    // id dipendente attivo, '__erase', oppure null
+let brush = null;                    // id dipendente attivo, '__erase', '__move__', oppure null
+const expandedAltro = new Set();     // date con colonna "Altro" espansa (locale al modulo, si perde al cambio vista)
+let dragSrc = null;                  // sorgente del drag in modalità Sposta: {date,shiftId,roleId}
 
 // ---- helper intervallo di giorni ----
 function addDays(date, n) {
@@ -60,6 +62,9 @@ function viewDays() {
   const f = weekStart(weekAnchor);
   return rangeDays(f, addDays(f, 6));
 }
+
+// classe del contenitore griglia in base alla modalità pennello (cursore/interazione)
+function wrapMode() { return brush === '__move__' ? 'moving' : (brush !== null ? 'painting' : ''); }
 
 // nome breve per le pastiglie: "Mario R." (nome + iniziale del cognome); fallback al nome
 function shortName(e) {
@@ -135,15 +140,20 @@ export function render() {
   if (canPaint) {
     const chip = (id, inner, cls = '') => `<button class="chip ${cls} ${brush === id ? 'on' : ''}" data-brush="${id}">${inner}</button>`;
     let chips = '';
-    if (canCrea) chips += emps.map(e => chip(e.id, `<span class="bc-ini" style="background:${esc(e.color || 'var(--accent)')}">${esc(initials(e))}</span>${esc(fullName(e))}`, 'brush-emp')).join('');
+    if (canCrea) chips += emps.map(e => {
+      const c = e.color || EMPLOYEE_COLOR_FALLBACK;
+      return chip(e.id, `<span class="bc-ini" style="background:${esc(c)};color:${pickTextColor(c)}">${esc(initials(e))}</span>${esc(fullName(e))}`, 'brush-emp');
+    }).join('');
     if (canDel) chips += chip('__erase', '🧽 Gomma');
+    // Sposta: trascina le pastiglie tra le celle (sposta/scambia); riusa i permessi di scrittura presenze
+    if (canCrea) chips += chip('__move__', '↔️ Sposta', 'brush-move');
     h += `<div class="card" style="margin-bottom:8px">
-      <div class="muted" style="font-size:12.5px;margin-bottom:8px">Scegli un dipendente e tocca le celle per assegnarlo al turno·ruolo. Ri-tocca la sua cella per rimuoverlo. Le presenze <b>confermate</b> (✓) non si modificano da qui: togli prima la conferma in <b>Presenze</b>.</div>
+      <div class="muted" style="font-size:12.5px;margin-bottom:8px">Scegli un dipendente e tocca le celle per assegnarlo al turno·ruolo. Ri-tocca la sua cella per rimuoverlo. Con <b>↔️ Sposta</b> trascini le pastiglie tra le celle (drop su cella occupata = scambio). Le presenze <b>confermate</b> (✓) non si modificano da qui: togli prima la conferma in <b>Presenze</b>.</div>
       <div class="chips" style="margin:0">${chips}</div>
     </div>`;
   }
 
-  h += `<div class="turni-wrap ${brush !== null ? 'painting' : ''}" id="twrap">${gridHTML(cid, company, shifts, roles)}</div>`;
+  h += `<div class="turni-wrap ${wrapMode()}" id="twrap">${gridHTML(cid, company, shifts, roles)}</div>`;
   return h;
 }
 
@@ -174,20 +184,33 @@ function gridHTML(cid, company, shifts, roles) {
   return `<table class="turni" style="min-width:${minW}px"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
-// cella giorno·turno·ruolo: pastiglia del dipendente assegnato oppure vuota
+// cella giorno·turno·ruolo: pastiglia del dipendente assegnato oppure vuota.
+// Lo sfondo è il COLORE del dipendente (non più la scala verde del turno); il testo passa a
+// nero/bianco secondo la luminanza (pickTextColor). In modalità Sposta le celle piene non
+// confermate sono trascinabili (movable) e ogni cella non bloccata è bersaglio di drop (droptarget).
 function cellHTML(cid, date, t, r, locked) {
   const rec = cellRecord(cid, date, t.id, r.id);
   const key = `${date}|${t.id}|${r.id}`;
+  const move = brush === '__move__';
   if (rec) {
     const e = emp(rec.employeeId);
     const nm = e ? shortName(e) : '?';
     const conf = rec.confirmed !== false;   // confermata → bloccata da qui
-    return `<td class="tcell filled sh-${t.id}${conf ? ' confirmed' : ''}" data-cell="${key}" title="${esc(e ? fullName(e) : '?')} · ${esc(t.name)} · ${esc(r.name)}${conf ? ' · confermata (modifica in Presenze)' : ''}">${esc(nm)}${conf ? '<span class="tcheck">✓</span>' : ''}</td>`;
+    const bg = (e && e.color) || EMPLOYEE_COLOR_FALLBACK;
+    const fg = pickTextColor(bg);
+    const dnd = move && !conf && !locked;   // trascinabile e bersaglio
+    const cls = `tcell filled${conf ? ' confirmed' : ''}${dnd ? ' movable droptarget' : ''}`;
+    return `<td class="${cls}" style="background:${bg};color:${fg}" data-cell="${key}"${dnd ? ' draggable="true"' : ''} title="${esc(e ? fullName(e) : '?')} · ${esc(t.name)} · ${esc(r.name)}${conf ? ' · confermata (modifica in Presenze)' : ''}"><span class="tpill">${esc(nm)}${conf ? '<span class="tcheck">✓</span>' : ''}</span></td>`;
   }
-  return `<td class="tcell empty${locked ? ' locked' : ''}" data-cell="${key}"></td>`;
+  const drop = move && !locked;
+  return `<td class="tcell empty${locked ? ' locked' : ''}${drop ? ' droptarget' : ''}" data-cell="${key}"></td>`;
 }
 
-// colonna "Altro" (sola lettura): assenze del giorno + presenti senza cella (no ruolo / non collocabili)
+// colonna "Altro" (sola lettura): assenze del giorno + presenti senza cella (no ruolo / non collocabili).
+// COLLASSABILE per giorno: di default mostra un riassunto compatto ("N assenze · M fuori griglia")
+// con freccina ▸; al click si espande con tutte le pastiglie e freccina ▾. L'espansione allunga solo
+// le righe di QUEL giorno (scelta più semplice e robusta: nessun overlay assoluto, l'omogeneità delle
+// altre righe resta intatta). Senza contenuto: cella vuota senza freccina.
 function altroHTML(cid, company, roles, shifts, date) {
   const NS = shifts.length;
   const roleIds = new Set(roles.map(r => r.id));
@@ -195,19 +218,33 @@ function altroHTML(cid, company, roles, shifts, date) {
   const empSet = new Set(companyEmployees(cid, { includeInactive: true }).map(e => e.id));
   const recs = data.attendance.filter(a => a.companyId === cid && a.date === date && empSet.has(a.employeeId));
   const pills = [];
+  let nAbs = 0, nOut = 0;
   for (const a of recs) {
     const e = emp(a.employeeId); if (!e) continue;
     if (a.status === 'present') {
       // presente collocato in griglia? (ruolo valido + turno valido) → non va in Altro
       const placed = a.roleId && roleIds.has(a.roleId) && shiftIds.has(a.shift);
       if (placed) continue;
+      nOut++;
       pills.push(`<span class="altro-pill neutral" title="${esc(fullName(e))} · presente (senza ruolo)">${esc(shortName(e))}</span>`);
     } else {
       const s = statusInfo(a.status);
+      nAbs++;
       pills.push(`<span class="altro-pill" style="background:${s.color}" title="${esc(fullName(e))} · ${esc(s.label)}">${esc(shortName(e))}<span class="altro-st">${s.short}</span></span>`);
     }
   }
-  return `<td class="altrocol" rowspan="${NS}">${pills.join('') || '<span class="muted" style="font-size:11px">—</span>'}</td>`;
+  if (!pills.length) return `<td class="altrocol" rowspan="${NS}"><span class="muted" style="font-size:11px">—</span></td>`;
+  const open = expandedAltro.has(date);
+  const parts = [];
+  if (nAbs) parts.push(`${nAbs} assenz${nAbs === 1 ? 'a' : 'e'}`);
+  if (nOut) parts.push(`${nOut} fuori griglia`);
+  const summary = parts.join(' · ');
+  const inner = open
+    ? `<div class="altro-pills">${pills.join('')}</div>`
+    : `<span class="altro-sum">${esc(summary)}</span>`;
+  return `<td class="altrocol${open ? ' open' : ''}" rowspan="${NS}">
+    <button type="button" class="altro-toggle" data-altro="${date}" title="${open ? 'Comprimi' : 'Espandi'}"><span class="altro-caret">${open ? '▾' : '▸'}</span>${inner}</button>
+  </td>`;
 }
 
 export function bind(root) {
@@ -255,15 +292,106 @@ export function bind(root) {
     downloadBlob(name, blob); toast(`ZIP con ${count} prospett${count === 1 ? 'o' : 'i'}`);
   });
 
-  // pennello (dipendente / gomma)
+  // pennello (dipendente / gomma / Sposta)
   root.querySelectorAll('[data-brush]').forEach(b => b.onclick = () => {
     brush = brush === b.dataset.brush ? null : b.dataset.brush;
+    dragSrc = null;
     root.querySelectorAll('[data-brush]').forEach(x => x.classList.toggle('on', x.dataset.brush === brush));
-    root.querySelector('#twrap')?.classList.toggle('painting', brush !== null);
+    // il passaggio da/verso "Sposta" cambia draggable/droptarget delle celle → ricostruisci la griglia
+    regrid(root);
   });
 
-  // celle
+  bindGrid(root, cid);
+}
+
+// (ri)aggancia gli handler della sola griglia: click celle, toggle "Altro", drag&drop
+function bindGrid(root, cid) {
+  const wrap = root.querySelector('#twrap');
+  if (wrap) wrap.className = `turni-wrap ${wrapMode()}`;
   root.querySelectorAll('td.tcell').forEach(td => td.onclick = () => onCellClick(cid, td, root));
+  root.querySelectorAll('.altro-toggle').forEach(b => b.onclick = () => {
+    const d = b.dataset.altro;
+    if (expandedAltro.has(d)) expandedAltro.delete(d); else expandedAltro.add(d);
+    regrid(root);
+  });
+  bindDnd(root, cid);
+}
+
+// ricostruisce SOLO la griglia (#twrap) preservando lo scroll, e riaggancia gli handler.
+function regrid(root) {
+  const cid = activeCompany();
+  if (!cid) return;
+  const company = co(cid);
+  const wrap = root.querySelector('#twrap');
+  if (!wrap) { rerender(root); return; }
+  const sl = wrap.scrollLeft, st = wrap.scrollTop;
+  wrap.innerHTML = gridHTML(cid, company, companyShiftTypes(company), companyRoles(company));
+  wrap.className = `turni-wrap ${wrapMode()}`;
+  wrap.scrollLeft = sl; wrap.scrollTop = st;
+  bindGrid(root, cid);
+}
+
+// ---- Sposta: drag & drop delle pastiglie tra celle (adattato da Zen-Staff) ----
+function bindDnd(root, cid) {
+  if (brush !== '__move__') return;
+  const clearHi = () => root.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  // sorgenti: celle piene non confermate (già draggable=true)
+  root.querySelectorAll('td.tcell.filled.movable[data-cell]').forEach(td => {
+    td.ondragstart = ev => {
+      const [date, shiftId, roleId] = td.dataset.cell.split('|');
+      dragSrc = { date, shiftId, roleId };
+      ev.dataTransfer.effectAllowed = 'move';
+      try { ev.dataTransfer.setData('text/plain', td.dataset.cell); } catch (e) {}
+      td.classList.add('dragging');
+    };
+    td.ondragend = () => { td.classList.remove('dragging'); clearHi(); dragSrc = null; };
+  });
+  // bersagli: ogni cella non bloccata (vuota o piena non confermata)
+  root.querySelectorAll('td.tcell.droptarget[data-cell]').forEach(td => {
+    td.ondragover = ev => { if (!dragSrc) return; ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; td.classList.add('drag-over'); };
+    td.ondragleave = () => td.classList.remove('drag-over');
+    td.ondrop = ev => {
+      ev.preventDefault(); td.classList.remove('drag-over');
+      const [date, shiftId, roleId] = td.dataset.cell.split('|');
+      dropOnCell(cid, { date, shiftId, roleId }, td, root);
+    };
+  });
+}
+
+// Rilascio su una cella: sposta il turno trascinato; se la cella è occupata scambia i due occupanti.
+// Rispetta i blocchi: presenze confermate e mesi chiusi non si toccano; un dipendente resta con un
+// solo record al giorno (spostamento su un giorno diverso vietato se lì ha già un record/assenza).
+function dropOnCell(cid, dst, td, root) {
+  const src = dragSrc; if (!src) return;
+  if (src.date === dst.date && src.shiftId === dst.shiftId && src.roleId === dst.roleId) return;
+  const srcRec = cellRecord(cid, src.date, src.shiftId, src.roleId);
+  if (!srcRec || srcRec.confirmed !== false) { nudge(td, 'Turno non spostabile'); return; }
+  if (isMonthLocked(cid, src.date.slice(0, 7)) || isMonthLocked(cid, dst.date.slice(0, 7))) { nudge(td, 'Mese chiuso: non modificabile'); return; }
+  const dstRec = cellRecord(cid, dst.date, dst.shiftId, dst.roleId);
+  if (dstRec && dstRec.confirmed !== false) { nudge(td, 'Cella con presenza confermata: non modificabile'); return; }
+  const sameDay = src.date === dst.date;
+
+  if (!dstRec) {
+    // cella vuota → sposta. Se cambia giorno, il dipendente non deve avere già un record lì.
+    if (!sameDay) {
+      const clash = dayRecordOf(cid, srcRec.employeeId, dst.date);
+      if (clash) { nudge(td, `${fullName(emp(srcRec.employeeId))} ha già un record il ${fmtDateFull(dst.date)}`); return; }
+    }
+    srcRec.date = dst.date; srcRec.shift = dst.shiftId; srcRec.roleId = dst.roleId;
+  } else {
+    // cella occupata → SCAMBIO (entrambi non confermati). Se cambia giorno, verifica che nessuno dei
+    // due abbia già un altro record nel giorno di destinazione.
+    if (!sameDay) {
+      const c1 = dayRecordOf(cid, srcRec.employeeId, dst.date);
+      const c2 = dayRecordOf(cid, dstRec.employeeId, src.date);
+      if (c1 && c1 !== dstRec) { nudge(td, `${fullName(emp(srcRec.employeeId))} ha già un record il ${fmtDateFull(dst.date)}`); return; }
+      if (c2 && c2 !== srcRec) { nudge(td, `${fullName(emp(dstRec.employeeId))} ha già un record il ${fmtDateFull(src.date)}`); return; }
+    }
+    srcRec.date = dst.date; srcRec.shift = dst.shiftId; srcRec.roleId = dst.roleId;
+    dstRec.date = src.date; dstRec.shift = src.shiftId; dstRec.roleId = src.roleId;
+  }
+  dragSrc = null;
+  save(); regrid(root);
 }
 
 // feedback discreto (mai alert): shake della cella + toast leggero
@@ -273,6 +401,7 @@ function nudge(td, msg) {
 }
 
 function onCellClick(cid, td, root) {
+  if (brush === '__move__') return;   // in modalità Sposta si interagisce solo via drag&drop
   const [date, shiftId, roleId] = td.dataset.cell.split('|');
   const month = date.slice(0, 7);
   const rec = cellRecord(cid, date, shiftId, roleId);

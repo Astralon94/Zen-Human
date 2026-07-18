@@ -1,7 +1,7 @@
 // ============ Vista Dipendenti: elenco + scheda completa ============
 import { data, save } from '../../state/store.js';
 import { can } from '../../state/auth.js';
-import { STATUS_ORDER, STATUSES, ENTRY_KINDS, companyShiftTypes, shiftTypeById, companyRoles } from '../../state/model.js';
+import { STATUS_ORDER, STATUSES, ENTRY_KINDS, companyShiftTypes, shiftTypeById, companyRoles, EMPLOYEE_COLORS, EMPLOYEE_COLOR_FALLBACK, nextEmployeeColor } from '../../state/model.js';
 import {
   esc, uid, fmt, fmtNum, parseAmount, fullName, initials,
   thisMonth, shiftMonth, fmtMonth, daysInMonth, weekdayMon0, pad2, todayStr, GIORNI, fmtDateFull
@@ -39,7 +39,7 @@ function renderList(cid) {
     const net = monthlyNet(e, month).net;
     const inactive = e.active === false;
     return `<div class="row click" data-emp="${e.id}">
-      <div class="avatar" style="background:${esc(e.color || '#4f8a76')}">${esc(initials(e))}</div>
+      <div class="avatar" style="background:${esc(e.color || EMPLOYEE_COLOR_FALLBACK)}">${esc(initials(e))}</div>
       <div class="mid"><div class="t1">${esc(fullName(e))} ${inactive ? '<span class="badge line">cessato</span>' : ''}${contractBadge(e)}${librettoBadge(e)}</div>
         <div class="t2">${esc(e.role || 'Senza mansione')}</div></div>
       <div class="amt tnum">${fmt(net)}<div class="t2" style="font-weight:500">${esc(fmtMonth(month))}</div></div>
@@ -91,7 +91,7 @@ function renderDetail(e) {
   </div>`;
 
   h += `<div class="card" style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
-    <div class="avatar" style="width:46px;height:46px;font-size:16px;background:${esc(e.color || '#4f8a76')}">${esc(initials(e))}</div>
+    <div class="avatar" style="width:46px;height:46px;font-size:16px;background:${esc(e.color || EMPLOYEE_COLOR_FALLBACK)}">${esc(initials(e))}</div>
     <div style="flex:1;min-width:0">
       <div style="font-weight:800;font-size:18px">${esc(fullName(e))} ${e.active === false ? '<span class="badge line">cessato</span>' : ''}${contractBadge(e)}${librettoBadge(e)}</div>
       <div class="muted" style="font-size:13px">${esc(e.role || 'Senza mansione')}${e.contract ? ' · 📄 ' + esc(e.contract) : ''}${e.iban ? ' · IBAN ' + esc(e.iban) : ''}</div>
@@ -364,7 +364,8 @@ function empSheet(e) {
   const canDelEmp = !!e && can('dipendenti.elimina');                  // può eliminare
   if (!w && !canDelEmp) return;   // difesa: nessuna azione consentita
   const cid = activeCompany();
-  const colors = ['#4f8a76', '#5b83a6', '#8b7fa8', '#c2685f', '#c98a52', '#5a9aa0', '#b97fa0', '#7f9e6a'];
+  const colors = EMPLOYEE_COLORS;
+  const defColor = e?.color || nextEmployeeColor(companyEmployees(cid, { includeInactive: true }));
   openSheet(`
     <h2>${e ? (w ? 'Modifica dipendente' : 'Dettaglio dipendente') : 'Nuovo dipendente'}</h2>
     <div class="frow">
@@ -385,19 +386,18 @@ function empSheet(e) {
     </div>
     <div class="field"><label>🔒 Nota privata (solo interna)</label><textarea id="f_noteprivate" rows="2" placeholder="Non compare in nessun export">${esc(e?.notePrivate || '')}</textarea></div>
     <div class="field"><label>📋 Nota per il consulente</label><textarea id="f_noteconsultant" rows="2" placeholder="Se compilata, viene allegata al PDF per il consulente">${esc(e?.noteConsultant || '')}</textarea></div>
-    <div class="field"><label>Colore</label><div class="btnrow" id="f_colors">${colors.map(c => `<button data-color="${c}" style="width:26px;height:26px;border-radius:50%;background:${c};border:2px solid ${(e?.color || '#4f8a76') === c ? 'var(--txt)' : 'transparent'}"></button>`).join('')}</div></div>
+    <div class="field"><label>Colore</label><div class="swatch-grid" id="f_colors">${colors.map(c => `<button type="button" class="swatch${defColor === c ? ' on' : ''}" data-color="${c}" style="background:${c}" title="${c}"></button>`).join('')}</div></div>
     ${e ? `<div class="field"><label>Stato</label><select id="f_active"><option value="1" ${e.active !== false ? 'selected' : ''}>Attivo</option><option value="0" ${e.active === false ? 'selected' : ''}>Cessato</option></select></div>` : ''}
     <div class="actions">
       ${canDelEmp ? '<button class="btn danger" data-del>Elimina</button>' : ''}
       <button class="btn" data-cancel>${w ? 'Annulla' : 'Chiudi'}</button>
       ${w ? '<button class="btn primary" data-save>Salva</button>' : ''}
     </div>`, sheet => {
-    let color = e?.color || '#4f8a76';
+    let color = defColor;
     if (!w) sheet.querySelectorAll('input, select, textarea, [data-color]').forEach(el => { el.disabled = true; el.style.pointerEvents = 'none'; });
     sheet.querySelectorAll('[data-color]').forEach(b => b.onclick = () => {
       color = b.dataset.color;
-      sheet.querySelectorAll('[data-color]').forEach(x => x.style.borderColor = 'transparent');
-      b.style.borderColor = 'var(--txt)';
+      sheet.querySelectorAll('[data-color]').forEach(x => x.classList.toggle('on', x === b));
     });
     // "Tempo indeterminato": disabilita e svuota la scadenza
     const copen = sheet.querySelector('#f_copen'), cend = sheet.querySelector('#f_cend');

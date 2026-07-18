@@ -59,3 +59,23 @@ export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 
 export const fullName = e => `${(e.firstName || '').trim()} ${(e.lastName || '').trim()}`.trim() || 'Senza nome';
 export const initials = e => ((e.firstName || ' ')[0] + (e.lastName || ' ')[0]).toUpperCase();
+
+// ---- Contrasto testo su sfondo colorato (riusabile: griglia Turni + export) ----
+// Da un esadecimale ('#rgb' o '#rrggbb') a [r,g,b]; fallback grigio se non valido.
+export function hexToRgb(hex) {
+  const h = String(hex || '').trim().replace('#', '');
+  const s = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const n = parseInt(s, 16);
+  return (s.length === 6 && Number.isFinite(n)) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [168, 165, 157];
+}
+// Luminanza percepita normalizzata 0–1 (pesi WCAG/Rec.601 sui canali sRGB). Vicina a 1 per le
+// tinte chiare, vicina a 0 per quelle scure.
+export function perceivedLuminance(hex) {
+  const [r, g, b] = hexToRgb(hex);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+// Sceglie testo scuro o chiaro per un dato sfondo: sopra la soglia (~0.55) lo sfondo è "chiaro"
+// → testo scuro; sotto → testo bianco. Default coerenti con i token --txt (chiaro) dell'app.
+export function pickTextColor(bg, { dark = '#26251f', light = '#ffffff', threshold = 0.55 } = {}) {
+  return perceivedLuminance(bg) > threshold ? dark : light;
+}

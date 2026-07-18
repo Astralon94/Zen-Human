@@ -10,8 +10,8 @@
 
 import { data } from '../state/store.js';
 import { co, emp, companyEmployees } from './payroll.js';
-import { companyShiftTypes, shiftTypeById, companyRoles, roleById, STATUSES } from '../state/model.js';
-import { esc, pad2, fullName, GIORNI, MESI, weekdayMon0 } from './util.js';
+import { companyShiftTypes, shiftTypeById, companyRoles, roleById, STATUSES, EMPLOYEE_COLOR_FALLBACK } from '../state/model.js';
+import { esc, pad2, fullName, GIORNI, MESI, weekdayMon0, pickTextColor } from './util.js';
 import { shiftBgHex, shiftFgHex } from '../ui/shiftcolors.js';
 import { PAGE, jpegPagesToPdf, buildPdfBytes } from './pdf.js';
 
@@ -175,8 +175,11 @@ function buildTableSVG(company, shifts, roles, days, meta) {
         const rec = cellRecord(company.id, date, t.id, r.id);
         const e = rec ? emp(rec.employeeId) : null;
         if (e) {
-          s += rect(rx + 1, ry + 1, wRole - 2, rowH - 2, shColors[si].bg);
-          s += text(rx + wRole / 2, ry + rowH / 2 + 4, fullName(e), { size: 9.5, weight: 700, fill: shColors[si].fg, anchor: 'middle' });
+          // cella nel COLORE del dipendente (come in griglia) con testo a contrasto; il pallino del
+          // turno (scala verde) resta nella colonna "Turno".
+          const bg = e.color || EMPLOYEE_COLOR_FALLBACK;
+          s += rect(rx + 1, ry + 1, wRole - 2, rowH - 2, bg);
+          s += text(rx + wRole / 2, ry + rowH / 2 + 4, fullName(e), { size: 9.5, weight: 700, fill: pickTextColor(bg), anchor: 'middle' });
         }
         rx += wRole;
       });
