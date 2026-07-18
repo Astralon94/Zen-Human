@@ -290,8 +290,9 @@ export async function exportTablePng(cid, dates, scale = 2) {
   return { blob, name: `turni_${slug(company.name)}_${from}_${to}.png` };
 }
 
-// ================= orchestrazione: ZIP di PDF individuali =================
-export async function exportEmployeesZip(cid, dates, scale = 2) {
+// ================= orchestrazione: ZIP di prospetti individuali (PDF o PNG) =================
+// format 'pdf' (default): un PDF A4 paginato per dipendente; 'png': un'unica immagine intera.
+export async function exportEmployeesZip(cid, dates, scale = 2, format = 'pdf') {
   const company = co(cid);
   const shifts = companyShiftTypes(company);
   const from = dates[0], to = dates[dates.length - 1];
@@ -310,7 +311,7 @@ export async function exportEmployeesZip(cid, dates, scale = 2) {
     list.forEach(a => {
       const t = shiftTypeById(company, a.shift);
       const r = roleById(company, a.roleId);
-      const label = t ? (t.start && t.end ? `${t.name}  ${t.start}–${t.end}` : t.name) : '—';
+      const label = t ? t.name : '—';
       const i = shifts.findIndex(x => x.id === a.shift);
       rows.push({ date: a.date, first: a.date !== prevDate, shiftLabel: label, role: r?.name || '', color: i >= 0 ? shiftBgHex(i, shifts.length, SH.light, SH.dark) : C.sub });
       prevDate = a.date;
@@ -318,17 +319,26 @@ export async function exportEmployeesZip(cid, dates, scale = 2) {
     // coda assenze (sobria)
     const tail = employeeAbsences(cid, e.id, dates).map(a => `${STATUSES[a.status]?.label || a.status}: ${dayNum(a.date)} ${monShort(a.date)}`);
 
-    const groups = chunk(rows, ROWS_PER_PAGE);
-    const pages = [];
-    for (let i = 0; i < groups.length; i++) {
-      const last = i === groups.length - 1;
-      const { svg, w, h } = buildEmployeeSVG(company, e, groups[i], { from, to, page: i + 1, pages: groups.length, tail: last ? tail : null });
-      const { jpeg, imgW, imgH } = await svgToJpeg(svg, w, h, scale);
-      pages.push({ jpeg, imgW, imgH, pageW: PAGE.a4portrait.w, pageH: PAGE.a4portrait.h, margin: 32 });
+    let bytes;
+    if (format === 'png') {
+      // immagine unica alta quanto serve (niente paginazione), come il PNG tabella
+      const { svg, w, h } = buildEmployeeSVG(company, e, rows, { from, to, page: 1, pages: 1, tail });
+      const { blob } = await rasterize(svg, w, h, scale, 'image/png');
+      bytes = new Uint8Array(await blob.arrayBuffer());
+    } else {
+      const groups = chunk(rows, ROWS_PER_PAGE);
+      const pages = [];
+      for (let i = 0; i < groups.length; i++) {
+        const last = i === groups.length - 1;
+        const { svg, w, h } = buildEmployeeSVG(company, e, groups[i], { from, to, page: i + 1, pages: groups.length, tail: last ? tail : null });
+        const { jpeg, imgW, imgH } = await svgToJpeg(svg, w, h, scale);
+        pages.push({ jpeg, imgW, imgH, pageW: PAGE.a4portrait.w, pageH: PAGE.a4portrait.h, margin: 32 });
+      }
+      bytes = buildPdfBytes(pages);
     }
-    const bytes = buildPdfBytes(pages);
-    let name = `turni_${slug(fullName(e))}_${from}_${to}.pdf`;
-    let k = 2; while (used.has(name)) name = `turni_${slug(fullName(e))}_${k++}_${from}_${to}.pdf`;
+    const ext = format === 'png' ? 'png' : 'pdf';
+    let name = `turni_${slug(fullName(e))}_${from}_${to}.${ext}`;
+    let k = 2; while (used.has(name)) name = `turni_${slug(fullName(e))}_${k++}_${from}_${to}.${ext}`;
     used.add(name);
     files.push({ name, data: bytes });
   }

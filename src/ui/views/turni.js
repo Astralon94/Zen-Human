@@ -132,7 +132,7 @@ export function render() {
   const exportBtns = canExport
     ? `<button class="btn sm" id="btnPdfTable" title="PDF della tabella turni del periodo (uso interno)">🖨️ PDF tabella</button>
        <button class="btn sm" id="btnPngTable" title="PNG della tabella turni del periodo (immagine intera)">🖼️ PNG tabella</button>
-       <button class="btn sm" id="btnZipEmp" title="ZIP con un PDF per dipendente (prospetto turni)">📦 ZIP dipendenti</button>`
+       <button class="btn sm" id="btnZipEmp" title="ZIP con un prospetto turni per dipendente (PDF o PNG)">📦 ZIP dipendenti</button>`
     : '';
 
   let h = `<div class="pagehead"><h1>Turni</h1><span class="sub">${esc((company?.emoji || '') + ' ' + company?.name)}</span>
@@ -339,12 +339,32 @@ export function bind(root) {
     const { blob, name } = await exportTablePng(cid, periodDates());
     downloadBlob(name, blob); toast('PNG tabella generato');
   });
+  // ZIP dipendenti: piccolo menu di scelta formato (PDF paginato o PNG immagine unica)
   const btnZip = root.querySelector('#btnZipEmp');
-  if (btnZip) btnZip.onclick = () => withBusy(btnZip, '⏳ Genero…', async () => {
-    const { blob, count, name } = await exportEmployeesZip(cid, periodDates());
+  const runZip = (format) => withBusy(btnZip, '⏳ Genero…', async () => {
+    const { blob, count, name } = await exportEmployeesZip(cid, periodDates(), 2, format);
     if (!count) { toast('Nessun turno assegnato nel periodo'); return; }
-    downloadBlob(name, blob); toast(`ZIP con ${count} prospett${count === 1 ? 'o' : 'i'}`);
+    downloadBlob(name, blob); toast(`ZIP con ${count} prospett${count === 1 ? 'o' : 'i'} ${format.toUpperCase()}`);
   });
+  if (btnZip) btnZip.onclick = () => {
+    if (btnZip.disabled) return;
+    const openPop = document.querySelector('.zip-pop');
+    if (openPop) { openPop.remove(); return; }
+    const r = btnZip.getBoundingClientRect();
+    const pop = document.createElement('div');
+    pop.className = 'extra-pop zip-pop';
+    pop.innerHTML = `<button class="btn sm" data-fmt="pdf">📄 PDF (A4, paginato)</button>
+      <button class="btn sm" data-fmt="png">🖼️ PNG (immagine unica)</button>`;
+    document.body.appendChild(pop);
+    const left = Math.min(Math.round(r.left), window.innerWidth - pop.offsetWidth - 8);
+    pop.style.left = left + 'px'; pop.style.top = Math.round(r.bottom + 4) + 'px';
+    const close = () => { pop.remove(); document.removeEventListener('mousedown', onDoc, true); document.removeEventListener('keydown', onKey, true); };
+    const onDoc = (ev) => { if (!pop.contains(ev.target) && ev.target !== btnZip) close(); };
+    const onKey = (ev) => { if (ev.key === 'Escape') close(); };
+    document.addEventListener('mousedown', onDoc, true);
+    document.addEventListener('keydown', onKey, true);
+    pop.querySelectorAll('[data-fmt]').forEach(b => b.onclick = () => { const f = b.dataset.fmt; close(); runZip(f); });
+  };
 
   // pennello (dipendente / gomma / Sposta)
   root.querySelectorAll('[data-brush]').forEach(b => b.onclick = () => {

@@ -297,6 +297,9 @@ table.turni td.tcell.extra .extra-pill {
 .extra-pop input { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px;
   font: inherit; font-size: 12.5px; background: var(--card2); color: var(--txt); }
 .extra-pop input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* menu formato dello ZIP dipendenti (riusa la resa del popover Extra) */
+.zip-pop { display: flex; flex-direction: column; gap: 4px; }
+.zip-pop .btn { justify-content: flex-start; text-align: left; }
 /* modalità Sposta: pastiglie trascinabili + bersagli con evidenziazione discreta al dragover */
 .turni-wrap.moving td.tcell.movable { cursor: grab; }
 .turni-wrap.moving td.tcell.movable:active { cursor: grabbing; }
