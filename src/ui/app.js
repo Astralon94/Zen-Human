@@ -7,6 +7,7 @@ import { esc } from '../domain/util.js';
 
 import * as riepilogo from './views/riepilogo.js';
 import * as compilazione from './views/compilazione.js';
+import * as turni from './views/turni.js';
 import * as bonusSanzioni from './views/bonus-sanzioni.js';
 import * as dipendenti from './views/dipendenti.js';
 import * as scadenze from './views/scadenze.js';
@@ -15,14 +16,15 @@ import * as utenti from './views/utenti.js';
 
 const VIEWS = {
   rie: { mod: riepilogo, title: 'Riepilogo', icon: '◷' },
-  comp: { mod: compilazione, title: 'Compilazione', icon: '🗓️' },
+  comp: { mod: compilazione, title: 'Presenze', icon: '🗓️' },
+  turni: { mod: turni, title: 'Turni', icon: '🕐' },
   bse: { mod: bonusSanzioni, title: 'Voci economiche', icon: '➕' },
   dip: { mod: dipendenti, title: 'Dipendenti', icon: '👤' },
   sca: { mod: scadenze, title: 'Scadenze', icon: '⏳' },
   utenti: { mod: utenti, title: 'Utenti', icon: '👥' },
   set: { mod: impostazioni, title: 'Impostazioni', icon: '⚙' }
 };
-const ORDER = ['rie', 'comp', 'bse', 'dip', 'sca', 'utenti', 'set'];
+const ORDER = ['rie', 'comp', 'turni', 'bse', 'dip', 'sca', 'utenti', 'set'];
 
 let current = 'rie';
 let mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -189,7 +191,7 @@ export function renderApp() {
       ${companySelect()}
       ${userMenu()}
     </div>
-    <main><div id="view" class="${current === 'comp' ? 'wide' : ''}"></div></main>`;
+    <main><div id="view" class="${current === 'comp' || current === 'turni' ? 'wide' : ''}"></div></main>`;
 
   const toggle = app.querySelector('#navToggle');
   const menu = app.querySelector('#navMenu');

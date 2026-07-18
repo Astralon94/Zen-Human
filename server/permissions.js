@@ -41,6 +41,9 @@ export const PERMISSIONS = [
   { key: 'presenze.elimina',    group: 'Presenze',       label: 'Svuotare le giornate di presenza', write: true },
   { key: 'mese.chiusura',       group: 'Presenze',       label: 'Chiudere e riaprire i mesi (blocca le modifiche)', write: true },
 
+  // ---- Turni (pianificazione) — le scritture riusano i permessi presenze.* ----
+  { key: 'turni.view',          group: 'Turni',          label: 'Vedere la griglia di pianificazione dei turni' },
+
   // ---- Retribuzioni (voci economiche) ----
   { key: 'voci.view',           group: 'Retribuzioni',   label: 'Consultare le voci economiche (bonus, sanzioni, acconti)' },
   { key: 'voci.crea',           group: 'Retribuzioni',   label: 'Aggiungere voci economiche (bonus, sanzioni, acconti)', write: true },
@@ -75,7 +78,8 @@ export const PERMISSIONS = [
 // aspetto/aggiornamento/export/import/reset/aziende gestite da permessi distinti).
 export const NAV = [
   { key: 'rie',    icon: '◷',  label: 'Riepilogo',       perm: 'riepilogo.view' },
-  { key: 'comp',   icon: '🗓️', label: 'Compilazione',    perm: 'presenze.view' },
+  { key: 'comp',   icon: '🗓️', label: 'Presenze',        perm: 'presenze.view' },
+  { key: 'turni',  icon: '🕐', label: 'Turni',           perm: 'turni.view' },
   { key: 'bse',    icon: '➕', label: 'Voci economiche',  perm: 'voci.view' },
   { key: 'dip',    icon: '👤', label: 'Dipendenti',       perm: 'dipendenti.view' },
   { key: 'sca',    icon: '⏳', label: 'Scadenze',         perm: 'scadenze.view' },

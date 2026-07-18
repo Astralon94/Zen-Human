@@ -1,13 +1,14 @@
-// ============ Vista Compilazione: matrice dipendenti × giorni ============
+// ============ Vista Presenze: matrice dipendenti × giorni ============
 // Compilazione veloce di tutto il mese e di tutti i dipendenti in un'unica griglia.
 import { data, save } from '../../state/store.js';
 import { can } from '../../state/auth.js';
-import { STATUS_ORDER, STATUSES, SHIFT_ORDER, SHIFTS } from '../../state/model.js';
+import { STATUS_ORDER, STATUSES, companyShiftTypes, shiftTypeById, companyRoles, roleById } from '../../state/model.js';
 import {
   esc, uid, fmt, fmtNum, parseAmount, fullName, initials, fmtMonth, shiftMonth,
   daysInMonth, weekdayMon0, pad2, todayStr, fmtDateFull, GIORNI, thisMonth
 } from '../../domain/util.js';
 import { activeCompany, co, emp, companyEmployees, attendanceCell, statusInfo, monthlyNet, salaryFor, cellDeduction, isMonthLocked } from '../../domain/payroll.js';
+import { injectShiftScale } from '../shiftcolors.js';
 import { openSheet, closeSheet, confirmDialog, toast } from '../dom.js';
 import { attachmentsHTML, bindAttachments } from '../attachments.js';
 import { getMonth, setMonth } from './dipendenti.js';
@@ -16,7 +17,8 @@ let brush = null; // null = Dettaglio; '__erase' = gomma; '__confirm' = conferma
 
 export function render() {
   const cid = activeCompany();
-  if (!cid) return `<div class="pagehead"><h1>Compilazione</h1></div><div class="card empty">Crea prima un'azienda dalla sezione Aziende.</div>`;
+  if (!cid) return `<div class="pagehead"><h1>Presenze</h1></div><div class="card empty">Crea prima un'azienda dalla sezione Aziende.</div>`;
+  injectShiftScale(co(cid));   // aggiorna la scala di verdi per i tipi di turno di questa azienda
   const month = getMonth();
   const locked = isMonthLocked(cid, month);    // mese chiuso: nessuna scrittura di presenze
   const canCrea = can('presenze.crea') && !locked;   // pennello stati + salva su cella nuova
@@ -26,7 +28,7 @@ export function render() {
   if (!canPaint) brush = null;   // niente pennello: il tocco apre la scheda del giorno (lettura o modifica)
   const emps = companyEmployees(cid);
 
-  let h = `<div class="pagehead"><h1>Compilazione</h1><span class="sub">${esc((co(cid)?.emoji || '') + ' ' + co(cid)?.name)}</span></div>`;
+  let h = `<div class="pagehead"><h1>Presenze</h1><span class="sub">${esc((co(cid)?.emoji || '') + ' ' + co(cid)?.name)}</span></div>`;
   h += `<div class="card" style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
     <button class="btn sm" data-mprev>‹</button>
     <div style="flex:1;text-align:center;font-weight:700">${esc(fmtMonth(month))}</div>
@@ -95,7 +97,9 @@ function cellHTML(e, ds) {
     if (cell.status === 'present') {
       // presenza non ancora confermata: segno d'angolo discreto (classe unconfirmed)
       const unconf = cell.confirmed === false ? ' unconfirmed' : '';
-      return `<td class="mcell present sh-${cell.shift || 'none'}${unconf}" data-emp="${e.id}" data-day="${ds}">${info.short}${mark}${clip}</td>`;
+      // classe della gradazione: id del tipo di turno se esiste ancora nell'azienda, altrimenti "none"
+      const sh = shiftTypeById(co(e.companyId), cell.shift) ? cell.shift : 'none';
+      return `<td class="mcell present sh-${sh}${unconf}" data-emp="${e.id}" data-day="${ds}">${info.short}${mark}${clip}</td>`;
     }
     return `<td class="mcell" data-emp="${e.id}" data-day="${ds}" style="background:${info.color};color:#fff">${info.short}${mark}${clip}</td>`;
   }
@@ -147,10 +151,10 @@ function paintCell(e, ds, td) {
       const same = ex.status === brush;
       const wasPresent = ex.status === 'present';
       ex.status = brush; ex.amount = isAbs ? (same ? ex.amount || 0 : 0) : 0;
-      if (brush !== 'present') { ex.shift = null; ex.shiftBonus = 0; ex.confirmed = false; }
+      if (brush !== 'present') { ex.shift = null; ex.shiftBonus = 0; ex.roleId = null; ex.confirmed = false; }
       else if (!wasPresent) ex.confirmed = false;   // nuova presenza → da confermare
     } else {
-      data.attendance.push({ id: uid(), companyId: e.companyId, employeeId: e.id, date: ds, status: brush, amount: 0, shift: null, shiftBonus: 0, confirmed: false, note: '' });
+      data.attendance.push({ id: uid(), companyId: e.companyId, employeeId: e.id, date: ds, status: brush, amount: 0, shift: null, shiftBonus: 0, roleId: null, confirmed: false, note: '' });
     }
   }
   save();
@@ -180,6 +184,9 @@ function dayEditor(e, ds, td) {
   const canClear = !!cell && can('presenze.elimina') && !locked;       // svuota cella
   const certCanEdit = !!cell && can('presenze.modifica') && !locked;   // allegare/rimuovere il certificato
   const auto = Math.round(salaryFor(e, getMonth()) / 26 * 100) / 100;
+  const company = co(e.companyId);
+  const stypes = companyShiftTypes(company);   // tipi di turno configurati per l'azienda
+  const roles = companyRoles(company);         // ruoli configurati per l'azienda
   openSheet(`
     <h2>${esc(fullName(e))}</h2>
     <div class="sheetsub">${fmtDateFull(ds)} · ${w ? 'seleziona lo stato. Per le assenze puoi indicare un importo da scalare dal netto.' : 'dettaglio della giornata (sola lettura).'}</div>
@@ -190,9 +197,14 @@ function dayEditor(e, ds, td) {
       <div class="field"><label>Turno</label>
         <div class="chips" id="f_shift">
           <button type="button" class="chip ${!cell?.shift ? 'on' : ''}" data-sh="">—</button>
-          ${SHIFT_ORDER.map(k => `<button type="button" class="chip ${cell?.shift === k ? 'on' : ''}" data-sh="${k}">${SHIFTS[k].emoji} ${esc(SHIFTS[k].label)}</button>`).join('')}
+          ${stypes.map(t => `<button type="button" class="chip ${cell?.shift === t.id ? 'on' : ''}" data-sh="${t.id}">${esc(t.name)}</button>`).join('')}
         </div>
       </div>
+      ${roles.length ? `<div class="field"><label>Ruolo (opzionale)</label>
+        <select id="f_role">
+          <option value="">— Nessun ruolo</option>
+          ${roles.map(r => `<option value="${r.id}" ${cell?.roleId === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
+        </select></div>` : ''}
       <div class="field"><label>Bonus turno (opzionale, si somma al netto)</label><input id="f_sbonus" inputmode="decimal" value="${cell?.shiftBonus ? fmtNum(cell.shiftBonus) : ''}" placeholder="0,00"></div>
       <div class="field"><label><input type="checkbox" id="f_confirmed" ${cell?.status === 'present' && cell.confirmed !== false ? 'checked' : ''}> Presenza confermata</label></div>
     </div>
@@ -238,11 +250,12 @@ function dayEditor(e, ds, td) {
       const amt = STATUSES[status]?.kind === 'absence' ? (parseAmount(amtInput.value) || 0) : 0;
       const sBonus = isPresent ? (parseAmount(sheet.querySelector('#f_sbonus').value) || 0) : 0;
       const sShift = isPresent ? shift : null;
+      const sRole = isPresent ? (sheet.querySelector('#f_role')?.value || null) : null;
       const confirmed = isPresent ? !!sheet.querySelector('#f_confirmed').checked : false;
       const note = sheet.querySelector('#f_note').value.trim();
       const ex = data.attendance.find(a => a.employeeId === e.id && a.date === ds);
-      if (ex) { ex.status = status; ex.amount = amt; ex.shift = sShift; ex.shiftBonus = sBonus; ex.confirmed = confirmed; ex.note = note; }
-      else data.attendance.push({ id: uid(), companyId: e.companyId, employeeId: e.id, date: ds, status, amount: amt, shift: sShift, shiftBonus: sBonus, confirmed, note });
+      if (ex) { ex.status = status; ex.amount = amt; ex.shift = sShift; ex.shiftBonus = sBonus; ex.roleId = sRole; ex.confirmed = confirmed; ex.note = note; }
+      else data.attendance.push({ id: uid(), companyId: e.companyId, employeeId: e.id, date: ds, status, amount: amt, shift: sShift, shiftBonus: sBonus, roleId: sRole, confirmed, note });
       save(); closeSheet(); replaceCell(td, e, ds); updateNetto(e, getMonth());
     });
     const clr = sheet.querySelector('[data-clear]');

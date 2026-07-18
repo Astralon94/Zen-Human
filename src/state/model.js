@@ -12,8 +12,11 @@ export const DEFAULT_DATA = () => ({
   savedAt: 0,
   settings: { theme: 'auto', activeCompany: 'co1' },
   // aziende: dati completamente divisi tra loro. {id,name,emoji,color,piva,cf,note,
-  //   lockedMonths:['YYYY-MM'] (mesi "chiusi", inviati al consulente: presenze/voci di quel mese non modificabili)}
-  companies: [{ id: 'co1', name: 'Azienda 1', emoji: '🏢', color: '#4f8a76', piva: '', cf: '', note: '', lockedMonths: [] }],
+  //   lockedMonths:['YYYY-MM'] (mesi "chiusi", inviati al consulente: presenze/voci di quel mese non modificabili),
+  //   shiftTypes:[{id,name,start:'HH:MM',end:'HH:MM'}] (tipi di turno configurabili; ordine array = ordine righe
+  //     e scala colore in Turni; gli id 'mattina'/'pomeriggio'/'notte' coincidono coi valori legacy di attendance.shift),
+  //   roles:[{id,name,acronym}] (ruoli/mansioni; ordine array = ordine colonne in Turni; acronym max 4 maiuscolo)}
+  companies: [{ id: 'co1', name: 'Azienda 1', emoji: '🏢', color: '#4f8a76', piva: '', cf: '', note: '', lockedMonths: [], shiftTypes: DEFAULT_SHIFT_TYPES(), roles: [] }],
   // dipendenti: {id,companyId,firstName,lastName,role,emoji,active,createdAt,
   //   contract (tipo contratto, testo libero), contractStart/contractEnd/contractOpen (scadenza contratto),
   //   librettoSanitario ('YYYY-MM-DD'|'' scadenza libretto sanitario),
@@ -26,7 +29,9 @@ export const DEFAULT_DATA = () => ({
   employees: [],
   // presenze: una riga per dipendente + giorno. {id,companyId,employeeId,date:'YYYY-MM-DD',
   //   status:STATUS_KEY, amount (importo da scalare dal netto, opzionale; per permesso_nr è override del netto/26),
-  //   shift ('mattina'|'pomeriggio'|'notte'|null, solo per "present"), shiftBonus (bonus del turno, +netto),
+  //   shift (id di un tipo di turno dell'azienda, solo per "present"; i legacy 'mattina'/'pomeriggio'/'notte'
+  //     coincidono con gli id di default), shiftBonus (bonus del turno, +netto),
+  //   roleId (id di un ruolo dell'azienda|null, solo per "present"; descrittivo, ordina le colonne in Turni),
   //   confirmed (bool, solo per "present": presenza confermata dell'utente; una nuova nasce false), note,
   //   attachments:[{id,name,size,type,addedAt}] (certificati per malattia/infortunio; binari in attachments_bin)}
   attendance: [],
@@ -36,6 +41,10 @@ export const DEFAULT_DATA = () => ({
 });
 
 // ---- Turni della giornata (solo per i giorni "Presente") ----
+// I tipi di turno sono ora una LISTA LIBERA per azienda (company.shiftTypes). Le costanti
+// qui sotto restano solo come FALLBACK/etichette legacy: il codice legge i tipi dall'azienda
+// attiva via companyShiftTypes()/shiftTypeById(). Gli id di default coincidono con i valori
+// legacy salvati in attendance.shift, quindi i dati esistenti restano validi senza migrazioni.
 export const SHIFTS = {
   mattina:    { label: 'Mattina',    short: 'M', emoji: '🌅' },
   pomeriggio: { label: 'Pomeriggio', short: 'P', emoji: '🌤️' },
@@ -43,6 +52,33 @@ export const SHIFTS = {
 };
 export const SHIFT_ORDER = ['mattina', 'pomeriggio', 'notte'];
 export const shiftInfo = key => SHIFTS[key] || null;
+
+// Tipi di turno di default per una nuova azienda (id = valori legacy). Ordine = ordine righe/scala colore.
+export function DEFAULT_SHIFT_TYPES() {
+  return [
+    { id: 'mattina',    name: 'Mattina',    start: '06:00', end: '14:00' },
+    { id: 'pomeriggio', name: 'Pomeriggio', start: '14:00', end: '22:00' },
+    { id: 'notte',      name: 'Notte',      start: '22:00', end: '06:00' },
+  ];
+}
+// Tipi di turno configurati per un'azienda (con fallback difensivo ai default se mancanti/vuoti).
+export function companyShiftTypes(company) {
+  if (company && Array.isArray(company.shiftTypes) && company.shiftTypes.length) return company.shiftTypes;
+  return DEFAULT_SHIFT_TYPES();
+}
+// Lookup di un tipo di turno per id nell'azienda (null se non esiste).
+export function shiftTypeById(company, id) {
+  if (!id) return null;
+  return companyShiftTypes(company).find(t => t.id === id) || null;
+}
+// Ruoli configurati per un'azienda (ordine array = ordine colonne in Turni).
+export function companyRoles(company) {
+  return (company && Array.isArray(company.roles)) ? company.roles : [];
+}
+export function roleById(company, id) {
+  if (!id) return null;
+  return companyRoles(company).find(r => r.id === id) || null;
+}
 
 // ---- Stati presenza/assenza ----
 // kind: 'work' (lavorato), 'absence' (assenza/permesso), 'rest' (riposo, neutro).
@@ -75,8 +111,14 @@ export function migrate(d) {
   d.attendance = Array.isArray(d.attendance) ? d.attendance : [];
   d.entries = Array.isArray(d.entries) ? d.entries : [];
   delete d.log; // campo legacy non utilizzato
-  // aziende: mesi chiusi (blocco modifiche presenze/voci del mese)
-  d.companies.forEach(c => { if (!Array.isArray(c.lockedMonths)) c.lockedMonths = []; });
+  // aziende: mesi chiusi (blocco modifiche presenze/voci del mese) + tipi di turno e ruoli configurabili.
+  // Chi non ha shiftTypes riceve i 3 default (id legacy → i record attendance esistenti restano validi);
+  // chi non ha roles parte con lista vuota.
+  d.companies.forEach(c => {
+    if (!Array.isArray(c.lockedMonths)) c.lockedMonths = [];
+    if (!Array.isArray(c.shiftTypes) || !c.shiftTypes.length) c.shiftTypes = DEFAULT_SHIFT_TYPES();
+    if (!Array.isArray(c.roles)) c.roles = [];
+  });
   d.employees.forEach(e => {
     if (!Array.isArray(e.salaries)) e.salaries = [];
     if (!Array.isArray(e.loans)) e.loans = [];
@@ -97,11 +139,12 @@ export function migrate(d) {
   d.attendance.forEach(a => {
     if (a.shift === undefined) a.shift = null;
     if (a.shiftBonus == null) a.shiftBonus = 0;
+    if (a.roleId === undefined) a.roleId = null;   // ruolo del turno (solo "present"; descrittivo)
     if (!Array.isArray(a.attachments)) a.attachments = []; // certificati (malattia/infortunio)
     // conferma presenza (flag di workflow visivo): significativo solo per "present".
     // Storici privi del campo = già confermati (non devono apparire da riconfermare).
     if (a.status === 'present') { if (a.confirmed === undefined) a.confirmed = true; }
-    else a.confirmed = false;
+    else { a.confirmed = false; a.roleId = null; }   // roleId significativo solo per "present"
   });
   // voci: timestamp di inserimento per lo storico data/ora (retro-compat dai vecchi senza createdAt)
   d.entries.forEach(x => { if (x.createdAt == null) x.createdAt = (x.date ? Date.parse(x.date + 'T12:00:00') : 0) || Date.now(); });

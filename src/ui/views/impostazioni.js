@@ -6,6 +6,7 @@ import { esc, fmtDateFull } from '../../domain/util.js';
 import { toast, confirmDialog } from '../dom.js';
 import { applyTheme } from '../app.js';
 import { companiesSection, bindCompanies } from './aziende.js';
+import { turniConfigSection, bindTurniConfig } from './turni-config.js';
 
 // Ha almeno un permesso sulle aziende (la sezione Aziende vive qui dentro).
 const canAziende = () => can('aziende.crea') || can('aziende.modifica') || can('aziende.elimina');
@@ -24,6 +25,9 @@ export function render() {
 
   // gestione aziende (spostata qui dal menu)
   if (cAziende) { any = true; h += companiesSection(); }
+
+  // configurazione turni/ruoli dell'azienda attiva
+  if (cAspetto) { any = true; h += turniConfigSection(); }
 
   if (cAspetto) {
     any = true;
@@ -81,6 +85,7 @@ export function render() {
 
 export function bind(root) {
   if (canAziende()) bindCompanies(root);
+  if (can('impostazioni.manage')) bindTurniConfig(root);
   root.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { data.settings.theme = b.dataset.th; save(); applyTheme(); });
   root.querySelector('[data-export]')?.addEventListener('click', () => { exportJSON(); toast('Backup esportato ✓'); });
   const impFile = root.querySelector('#imp_file');

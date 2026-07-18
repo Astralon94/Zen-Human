@@ -4,13 +4,13 @@
   --bg: #f6f5f2; --card: #ffffff; --card2: #faf9f6; --line: #eae7e1;
   --txt: #26251f; --sub: #8f8d84; --faint: #b9b6ac; --accent: #4f8a76; --accent-soft: #e9f1ee;
   --green: #4f8a76; --red: #c2685f; --orange: #c98a52; --blue: #5b83a6; --purple: #8b7fa8;
-  /* Presenza per turno (compilazione): scala salvia armonica, dal chiaro allo scuro.
-     none=non specificato · morning=mattina · afternoon=pomeriggio · night=notte.
-     I chiari usano testo scuro, gli scuri testo bianco, per la leggibilità. */
+  /* Presenza per turno: la scala di verdi è GENERATA a runtime (vedi ui/shiftcolors.js)
+     interpolando tra questi due estremi in funzione dell'indice del tipo di turno, così
+     N tipi qualsiasi ottengono N gradazioni dal chiaro allo scuro. --present-fg-dark è il
+     testo scuro usato sulla metà chiara della scala (sulla metà scura il testo è bianco).
+     --present-none resta molto chiaro per i "present" senza turno specificato. */
+  --present-scale-light: #7cb6a0; --present-scale-dark: #2c5344; --present-fg-dark: #234438;
   --present-none: #b1d3c6;      --present-none-fg: #2c5344;
-  --present-morning: #7cb6a0;   --present-morning-fg: #234438;
-  --present-afternoon: #4f8a76; --present-afternoon-fg: #ffffff;
-  --present-night: #30594a;     --present-night-fg: #ffffff;
   --present-mark: 58%;          /* opacità del segno d'angolo "presenza non confermata" */
   --radius: 16px; --shadow: 0 1px 2px rgba(40,38,32,.04), 0 8px 24px rgba(40,38,32,.05);
   --fs: 15px;
@@ -19,11 +19,9 @@
   --bg: #12120f; --card: #1a1a16; --card2: #201f1b; --line: #2c2b25;
   --txt: #ededea; --sub: #918f88; --faint: #6a685f; --accent: #82b6a4; --accent-soft: #18241f;
   --green: #82b6a4; --red: #d98b82; --orange: #d6a06b; --blue: #88a8c8; --purple: #b3a6cc;
-  /* Presenza per turno (compilazione) — scala salvia per tema scuro, sempre distinguibile. */
+  /* Presenza per turno (dark) — estremi della scala salvia generata a runtime. */
+  --present-scale-light: #74b49b; --present-scale-dark: #2b5445; --present-fg-dark: #12241c;
   --present-none: #a2cdbd;      --present-none-fg: #14261f;
-  --present-morning: #74b49b;   --present-morning-fg: #12241c;
-  --present-afternoon: #4f9278; --present-afternoon-fg: #ffffff;
-  --present-night: #346552;     --present-night-fg: #ffffff;
   --present-mark: 52%;          /* opacità del segno d'angolo "presenza non confermata" (dark) */
   --shadow: 0 1px 2px rgba(0,0,0,.30), 0 8px 24px rgba(0,0,0,.22);
 }
@@ -222,14 +220,14 @@ table.matrix thead .namecol { z-index: 4; background: var(--card2); }
 table.matrix tbody td.mcell { position: relative; height: 34px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); cursor: pointer; color: #fff; font-weight: 700; font-size: 10px; overflow: hidden; }
 table.matrix tbody td.mcell.unset { color: var(--sub); background: var(--card); }
 table.matrix tbody td.mcell.unset.wknd { background: color-mix(in srgb, var(--line) 45%, transparent); }
-/* Presenza per turno: quattro gradazioni di verde (vedi token --present-*). */
+/* Presenza per turno: gradazioni di verde. La scala è GENERATA a runtime (ui/shiftcolors.js),
+   che imposta su ogni classe .sh-<id> le variabili --sh-bg/--sh-fg; qui le si applica. Il turno
+   "non specificato" (.sh-none) resta sui token dedicati, molto chiari. */
 table.matrix tbody td.mcell.present.sh-none { background: var(--present-none); color: var(--present-none-fg); }
-table.matrix tbody td.mcell.present.sh-mattina { background: var(--present-morning); color: var(--present-morning-fg); }
-table.matrix tbody td.mcell.present.sh-pomeriggio { background: var(--present-afternoon); color: var(--present-afternoon-fg); }
-table.matrix tbody td.mcell.present.sh-notte { background: var(--present-night); color: var(--present-night-fg); }
+table.matrix tbody td.mcell.present[class*="sh-"]:not(.sh-none) { background: var(--sh-bg, var(--present-none)); color: var(--sh-fg, var(--present-none-fg)); }
 /* Presenza non confermata: triangolino d'angolo (alto-destra) discreto. Usa currentColor
-   = il testo della cella (token --present-*-fg), quindi contrasta su tutte le 4 gradazioni
-   e in entrambi i temi senza cambiare lo sfondo. */
+   = il testo della cella (--sh-fg / token --present-*-fg), quindi contrasta su tutte le
+   gradazioni e in entrambi i temi senza cambiare lo sfondo. */
 table.matrix tbody td.mcell.present.unconfirmed::after {
   content: ""; position: absolute; top: 0; right: 0; width: 0; height: 0;
   border-top: 7px solid color-mix(in srgb, currentColor var(--present-mark), transparent);
@@ -239,6 +237,71 @@ table.matrix tbody td.mcell:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 table.matrix td.mcell sup { font-size: 11px; line-height: 0; }
 table.matrix .nettocol { position: sticky; right: 0; z-index: 3; width: 96px; background: var(--card); text-align: right; padding: 6px 12px; font-variant-numeric: tabular-nums; font-weight: 700; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 table.matrix thead .nettocol { z-index: 4; background: var(--card2); }
+
+/* ---- controllo segmentato (Settimana/Periodo) e campi data ---- */
+.seg { display: inline-flex; background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 2px; gap: 2px; }
+.seg button { padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--sub); }
+.seg button.on { background: var(--accent); color: #fff; }
+.rng-field { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--sub); font-weight: 600; }
+.rng-field input { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+
+/* ---- griglia Turni (giorno×turno × ruoli + Altro) ---- */
+.turni-wrap { overflow: auto; max-height: 74vh; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); background: var(--card); }
+.turni-wrap.painting td.tcell.empty { cursor: crosshair; }
+table.turni { border-collapse: separate; border-spacing: 0; font-size: 12px; width: 100%; }
+table.turni th, table.turni td { padding: 0; text-align: center; }
+table.turni thead th { position: sticky; top: 0; z-index: 2; background: var(--card2); color: var(--sub); font-weight: 700; height: 36px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); padding: 0 8px; }
+table.turni th.rolecol .rn-acr { display: none; }
+table.turni td, table.turni th { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+table.turni .daycol { width: 92px; background: var(--card); text-align: left; padding: 6px 10px; vertical-align: top; }
+table.turni .daycol.wknd { background: color-mix(in srgb, var(--line) 40%, transparent); }
+table.turni .daycol.today { box-shadow: inset 3px 0 0 var(--accent); }
+table.turni .cd-day { font-weight: 700; font-size: 13px; }
+table.turni .cd-dow { font-size: 10px; text-transform: uppercase; color: var(--sub); font-weight: 700; }
+table.turni .cd-mon { font-size: 9.5px; color: var(--sub); font-weight: 700; }
+table.turni .cd-today { display: inline-block; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; color: var(--accent); }
+table.turni .turnocol { width: 108px; text-align: left; padding: 6px 10px; font-weight: 600; color: var(--txt); white-space: nowrap; }
+table.turni .sh-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; background: var(--sh-bg, var(--present-none)); }
+table.turni .sh-dot.sh-none { background: var(--present-none); }
+table.turni td.tcell { height: 34px; padding: 3px 4px; cursor: pointer; vertical-align: middle; }
+table.turni td.tcell.empty { background: var(--card); }
+table.turni td.tcell.empty.locked { background: color-mix(in srgb, var(--line) 30%, transparent); cursor: not-allowed; }
+table.turni td.tcell.filled { background: var(--sh-bg, var(--present-none)); color: var(--sh-fg, var(--present-none-fg)); font-weight: 700; font-size: 11px; position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.turni td.tcell.filled.sh-none { background: var(--present-none); color: var(--present-none-fg); }
+table.turni td.tcell.filled.confirmed { cursor: default; }
+table.turni td.tcell .tcheck { margin-left: 4px; font-weight: 800; opacity: .9; }
+table.turni td.tcell.empty:hover { box-shadow: inset 0 0 0 2px var(--accent); }
+table.turni .altrocol { width: 150px; text-align: left; padding: 6px 8px; vertical-align: top; background: var(--card2); }
+.altro-pill { display: inline-flex; align-items: center; gap: 4px; margin: 2px 3px 2px 0; padding: 2px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; color: #fff; }
+.altro-pill.neutral { background: var(--card); color: var(--sub); border: 1px solid var(--line); }
+.altro-pill .altro-st { font-size: 9px; font-weight: 800; opacity: .85; }
+/* pastiglia dipendente nel pennello (bc-ini condiviso con le chip) */
+.chip.brush-emp { display: inline-flex; align-items: center; gap: 6px; padding-left: 4px; }
+.chip.brush-emp.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.bc-ini { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 10px; font-weight: 800; flex-shrink: 0; }
+/* feedback discreto: shake sulle azioni bloccate */
+@keyframes tk-shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+table.turni td.tcell.shake { animation: tk-shake .25s ease; }
+@media (max-width: 640px) {
+  table.turni th.rolecol .rn-full { display: none; }
+  table.turni th.rolecol .rn-acr { display: inline; }
+}
+
+/* ---- configurazione turni/ruoli (Impostazioni → Turni) ---- */
+.cfg-head { display: flex; align-items: center; gap: 8px; }
+.cfg-head .grow { flex: 1; }
+.cfg-list { display: flex; flex-direction: column; gap: 8px; }
+.cfg-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--card2); }
+.cfg-row .cfg-mid { flex: 1; min-width: 0; }
+.cfg-row .t1 { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cfg-row .t2 { color: var(--sub); font-size: 12px; font-variant-numeric: tabular-nums; }
+.cfg-swatch { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; font-size: 11px; font-weight: 800; flex-shrink: 0; }
+.cfg-acr { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; height: 26px; padding: 0 8px; border-radius: 8px; font-size: 11px; font-weight: 800; color: var(--accent); background: var(--accent-soft); flex-shrink: 0; }
+.cfg-row .btn.sm { padding: 5px 9px; }
+@media (max-width: 600px) {
+  .cfg-row { flex-wrap: wrap; }
+  .cfg-row .cfg-mid { flex-basis: 60%; }
+}
 
 /* ---- toast ---- */
 #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px); background: var(--txt); color: var(--bg);

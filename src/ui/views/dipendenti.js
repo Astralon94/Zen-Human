@@ -1,7 +1,7 @@
 // ============ Vista Dipendenti: elenco + scheda completa ============
 import { data, save } from '../../state/store.js';
 import { can } from '../../state/auth.js';
-import { STATUS_ORDER, STATUSES, ENTRY_KINDS, SHIFT_ORDER, SHIFTS, shiftInfo } from '../../state/model.js';
+import { STATUS_ORDER, STATUSES, ENTRY_KINDS, companyShiftTypes, shiftTypeById, companyRoles } from '../../state/model.js';
 import {
   esc, uid, fmt, fmtNum, parseAmount, fullName, initials,
   thisMonth, shiftMonth, fmtMonth, daysInMonth, weekdayMon0, pad2, todayStr, GIORNI, fmtDateFull
@@ -205,7 +205,7 @@ function brushBar(locked) {
   if (!canCrea && !canDel) return '';
   const b = (key, label, title) => `<button class="chip ${(brush || '') === key ? 'on' : ''}" data-brush="${key}" title="${esc(title)}">${label}</button>`;
   return `<div class="card" id="d_brush" style="margin-bottom:8px">
-    <div class="muted" style="font-size:12.5px;margin-bottom:8px">Compilazione rapida: scegli uno stato e tocca i giorni. In <b>Dettaglio</b> il tocco apre la scheda del giorno (importi e note).</div>
+    <div class="muted" style="font-size:12.5px;margin-bottom:8px">Presenze rapide: scegli uno stato e tocca i giorni. In <b>Dettaglio</b> il tocco apre la scheda del giorno (importi e note).</div>
     <div class="chips" style="margin:0">
       ${b('', '✏️ Dettaglio', 'Dettaglio: apre la scheda del giorno')}
       ${canCrea ? STATUS_ORDER.map(k => b(k, `${STATUSES[k].emoji} ${STATUSES[k].short}`, STATUSES[k].label)).join('') : ''}
@@ -230,10 +230,10 @@ function calInner(e) {
     if (wknd) cls += ' wknd';
     if (today) cls += ' today';
     const ded = cell ? cellDeduction(e, month, cell) : 0;
-    const sh = cell && cell.shift ? shiftInfo(cell.shift) : null;
+    const sh = cell && cell.shift ? shiftTypeById(co(e.companyId), cell.shift) : null;
     cells += `<div class="${cls}" style="${style}" data-day="${ds}">
       <div class="dn">${d}</div>
-      ${cell ? `<div class="st">${statusInfo(cell.status).emoji}${sh ? ' <span style="font-size:9px;opacity:.85">' + sh.emoji + '</span>' : ''}${cell.attachments?.length ? ' <span style="font-size:9px">📎</span>' : ''}</div>` : ''}
+      ${cell ? `<div class="st">${statusInfo(cell.status).emoji}${sh ? ' <span style="font-size:8px;opacity:.85;font-weight:700">' + esc(sh.name.slice(0, 3).toUpperCase()) + '</span>' : ''}${cell.attachments?.length ? ' <span style="font-size:9px">📎</span>' : ''}</div>` : ''}
       ${cell && cell.shiftBonus ? `<div class="ded" style="color:#4f8a76">+${fmtNum(cell.shiftBonus)}</div>` : (ded ? `<div class="ded">−${fmtNum(ded)}</div>` : '')}
     </div>`;
   }
@@ -473,6 +473,9 @@ function daySheet(e, ds) {
   const canClear = !!cell && can('presenze.elimina') && !locked;      // svuota giornata
   const certCanEdit = !!cell && can('presenze.modifica') && !locked;  // allegare/rimuovere il certificato
   const auto = Math.round(salaryFor(e, month) / 26 * 100) / 100; // trattenuta automatica permesso non retrib.
+  const company = co(e.companyId);
+  const stypes = companyShiftTypes(company);   // tipi di turno dell'azienda
+  const roles = companyRoles(company);         // ruoli dell'azienda
   openSheet(`
     <h2>${fmtDateFull(ds)}</h2>
     <div class="sheetsub">${w ? 'Seleziona lo stato della giornata. Per le assenze puoi indicare un importo da scalare dal netto.' : 'Dettaglio della giornata (sola lettura).'}</div>
@@ -483,9 +486,14 @@ function daySheet(e, ds) {
       <div class="field"><label>Turno</label>
         <div class="chips" id="f_shift">
           <button type="button" class="chip ${!cell?.shift ? 'on' : ''}" data-sh="">—</button>
-          ${SHIFT_ORDER.map(k => `<button type="button" class="chip ${cell?.shift === k ? 'on' : ''}" data-sh="${k}">${SHIFTS[k].emoji} ${esc(SHIFTS[k].label)}</button>`).join('')}
+          ${stypes.map(t => `<button type="button" class="chip ${cell?.shift === t.id ? 'on' : ''}" data-sh="${t.id}">${esc(t.name)}</button>`).join('')}
         </div>
       </div>
+      ${roles.length ? `<div class="field"><label>Ruolo (opzionale)</label>
+        <select id="f_role">
+          <option value="">— Nessun ruolo</option>
+          ${roles.map(r => `<option value="${r.id}" ${cell?.roleId === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
+        </select></div>` : ''}
       <div class="field"><label>Bonus turno (opzionale, si somma al netto)</label><input id="f_sbonus" inputmode="decimal" value="${cell?.shiftBonus ? fmtNum(cell.shiftBonus) : ''}" placeholder="0,00"></div>
     </div>
     <div class="field" id="amtwrap" style="${cell && STATUSES[cell.status]?.kind === 'absence' ? '' : 'display:none'}">
@@ -538,10 +546,11 @@ function daySheet(e, ds) {
       const amt = STATUSES[status]?.kind === 'absence' ? (parseAmount(amtInput.value) || 0) : 0;
       const sBonus = isPresent ? (parseAmount(sheet.querySelector('#f_sbonus').value) || 0) : 0;
       const sShift = isPresent ? shift : null;
+      const sRole = isPresent ? (sheet.querySelector('#f_role')?.value || null) : null;
       const note = sheet.querySelector('#f_note').value.trim();
       const ex = data.attendance.find(a => a.employeeId === e.id && a.date === ds);
-      if (ex) { ex.status = status; ex.amount = amt; ex.shift = sShift; ex.shiftBonus = sBonus; ex.note = note; }
-      else data.attendance.push({ id: uid(), companyId: e.companyId, employeeId: e.id, date: ds, status, amount: amt, shift: sShift, shiftBonus: sBonus, note });
+      if (ex) { ex.status = status; ex.amount = amt; ex.shift = sShift; ex.shiftBonus = sBonus; ex.roleId = sRole; ex.note = note; }
+      else data.attendance.push({ id: uid(), companyId: e.companyId, employeeId: e.id, date: ds, status, amount: amt, shift: sShift, shiftBonus: sBonus, roleId: sRole, note });
       save(); closeSheet(); rerender();
     });
     const clr = sheet.querySelector('[data-clear]');
