@@ -134,14 +134,40 @@ function employeeAbsences(cid, empId, dates) {
     .filter(a => a.companyId === cid && a.employeeId === empId && dset.has(a.date) && STATUSES[a.status]?.kind === 'absence')
     .sort((x, y) => x.date.localeCompare(y.date));
 }
+// dipendenti in ASSENZA (kind 'absence') in un giorno dell'azienda, per la colonna "Permessi"
+// della tabella. Ordinati per nome. Solo dipendenti in anagrafica (anche non attivi); i
+// "presenti fuori griglia" NON rientrano qui.
+function dayAbsences(cid, date) {
+  const empSet = new Set(companyEmployees(cid, { includeInactive: true }).map(e => e.id));
+  return data.attendance
+    .filter(a => a.companyId === cid && a.date === date && empSet.has(a.employeeId) && STATUSES[a.status]?.kind === 'absence')
+    .map(a => ({ e: emp(a.employeeId), status: a.status }))
+    .filter(x => x.e)
+    .sort((x, y) => fullName(x.e).localeCompare(fullName(y.e)));
+}
+
+// nome per le celle della tabella: completo, oppure solo il nome di battesimo ('first').
+// In 'first' senza nome di battesimo si ripiega sul nome completo (mai vuoto).
+function cellName(e, mode) {
+  if (mode === 'first') { const fn = (e.firstName || '').trim(); return fn || fullName(e); }
+  return fullName(e);
+}
+// tronca una stringa a maxChars caratteri (ellissi) per non sbordare in orizzontale
+function clampLabel(str, maxChars) {
+  str = String(str);
+  return str.length <= maxChars ? str : str.slice(0, Math.max(1, maxChars - 1)) + '…';
+}
 
 // ================= SVG: griglia turni (una pagina = un blocco di giorni) =================
 function buildTableSVG(company, shifts, roles, days, meta) {
   const n = shifts.length;
+  const nameMode = meta.nameMode === 'first' ? 'first' : 'full';
   const shColors = shifts.map((_, i) => ({ bg: shiftBgHex(i, n, SH.light, SH.dark), fg: shiftFgHex(i, n, SH.fgDark) }));
-  const wDay = 78, wShift = 118, wRole = Math.max(96, Math.min(150, Math.round((980 - wDay - wShift) / Math.max(1, roles.length))));
+  // colonna "Permessi" (assenze del giorno) in coda: larghezza fissa; i ruoli si restringono un filo se serve.
+  const wDay = 78, wShift = 116, wPerm = 168;
+  const wRole = Math.max(84, Math.min(148, Math.round((980 - wDay - wShift - wPerm) / Math.max(1, roles.length))));
   const gap = 6;
-  const W = wDay + wShift + roles.length * wRole;
+  const W = wDay + wShift + roles.length * wRole + wPerm;
   const padX = 22, padTop = 62, headH = 30, rowH = 26;
   const blockH = n * rowH;
   const H = padTop + headH + days.length * blockH + Math.max(0, days.length - 1) * gap + 22;
@@ -155,7 +181,7 @@ function buildTableSVG(company, shifts, roles, days, meta) {
   const x0 = padX, y0 = padTop;
   // header
   s += rect(x0, y0, W, headH, C.head);
-  const cols = [['Giorno', wDay], ['Turno', wShift]].concat(roles.map(r => [r.name, wRole]));
+  const cols = [['Giorno', wDay], ['Turno', wShift]].concat(roles.map(r => [r.name, wRole])).concat([['Permessi', wPerm]]);
   let cx = x0;
   cols.forEach(([label, w]) => { s += text(cx + 8, y0 + 20, label, { size: 10.5, weight: 700, fill: C.sub }); cx += w; });
   const colX = [x0]; { let vx = x0; cols.forEach(([, w]) => { vx += w; colX.push(vx); }); }
@@ -172,6 +198,7 @@ function buildTableSVG(company, shifts, roles, days, meta) {
     s += text(x0 + 30, top + 20, dow(date), { size: 9.5, fill: C.sub });
     if (meta.spanMonths) s += text(x0 + 8, top + 34, monShort(date), { size: 9, fill: C.sub, weight: 700 });
 
+    const permX = x0 + wDay + wShift + roles.length * wRole;
     shifts.forEach((t, si) => {
       const ry = top + si * rowH;
       s += `<circle cx='${x0 + wDay + 12}' cy='${ry + rowH / 2}' r='4' fill='${shColors[si].bg}'/>`;
@@ -185,7 +212,7 @@ function buildTableSVG(company, shifts, roles, days, meta) {
           // turno (scala verde) resta nella colonna "Turno".
           const bg = e.color || EMPLOYEE_COLOR_FALLBACK;
           s += rect(rx + 1, ry + 1, wRole - 2, rowH - 2, bg);
-          s += text(rx + wRole / 2, ry + rowH / 2 + 4, fullName(e), { size: 9.5, weight: 700, fill: pickTextColor(bg), anchor: 'middle' });
+          s += text(rx + wRole / 2, ry + rowH / 2 + 4, cellName(e, nameMode), { size: 9.5, weight: 700, fill: pickTextColor(bg), anchor: 'middle' });
         } else {
           // segnaposto "Extra": cella grigio chiaro col nome dell'esterno, in corsivo per distinguerlo
           const ex = extraRecord(company, date, t.id, r.id);
@@ -196,8 +223,33 @@ function buildTableSVG(company, shifts, roles, days, meta) {
         }
         rx += wRole;
       });
-      if (si > 0) s += line(x0 + wDay, ry, x0 + W, ry, C.hair, 1);
+      // le hairline tra i turni non attraversano la colonna Permessi (blocco unico come "Giorno")
+      if (si > 0) s += line(x0 + wDay, ry, permX, ry, C.hair, 1);
     });
+    // colonna "Permessi": fondo neutro + elenco assenze del giorno (nome + sigla stato). Blocco a
+    // rowspan sull'intero giorno; il testo si rimpicciolisce e, se serve, tronca con "+N" per non sbordare.
+    s += rect(permX, top, wPerm, blockH, C.head);
+    const abs = dayAbsences(company.id, date);
+    if (abs.length) {
+      const padV = 6, availH = blockH - padV * 2;
+      // font: 10 di base; se le voci non entrano, scende a 8.5
+      let fs = 10, lineH = fs + 2.5;
+      let maxLines = Math.max(1, Math.floor(availH / lineH));
+      if (abs.length > maxLines) { fs = 8.5; lineH = fs + 2; maxLines = Math.max(1, Math.floor(availH / lineH)); }
+      let show = abs, overflow = 0;
+      if (abs.length > maxLines) { show = abs.slice(0, Math.max(1, maxLines - 1)); overflow = abs.length - show.length; }
+      const maxChars = Math.max(4, Math.floor((wPerm - 16) / (fs * 0.56)));
+      let ty = top + padV + fs;
+      show.forEach(a => {
+        const nm = cellName(a.e, nameMode);
+        const sigla = STATUSES[a.status]?.short || '?';
+        s += text(permX + 8, ty, clampLabel(`${nm} (${sigla})`, maxChars), { size: fs, fill: C.txt });
+        ty += lineH;
+      });
+      if (overflow) s += text(permX + 8, ty, `+${overflow}`, { size: fs, fill: C.sub, weight: 700 });
+    } else {
+      s += text(permX + 8, top + blockH / 2 + 4, '—', { size: 10, fill: C.sub });
+    }
     colX.forEach(vx => s += line(vx, top, vx, top + blockH, C.line));
     s += line(x0, top, x0 + W, top, C.line) + line(x0, top + blockH, x0 + W, top + blockH, C.line);
     y = top + blockH;
@@ -270,7 +322,8 @@ export async function exportTablePdf(cid, dates, scale = 2) {
   const groups = chunk(dates, daysPerPage(shifts.length));
   const pages = [];
   for (let i = 0; i < groups.length; i++) {
-    const { svg, w, h } = buildTableSVG(company, shifts, roles, groups[i], { from, to, spanMonths, page: i + 1, pages: groups.length });
+    // il PDF resta sempre a nomi completi
+    const { svg, w, h } = buildTableSVG(company, shifts, roles, groups[i], { from, to, spanMonths, page: i + 1, pages: groups.length, nameMode: 'full' });
     const { jpeg, imgW, imgH } = await svgToJpeg(svg, w, h, scale);
     pages.push({ jpeg, imgW, imgH, pageW: PAGE.a4landscape.w, pageH: PAGE.a4landscape.h, margin: 24 });
   }
@@ -279,15 +332,17 @@ export async function exportTablePdf(cid, dates, scale = 2) {
 
 // ================= orchestrazione: PNG tabella (immagine intera, non paginata) =================
 // Stessa griglia del PDF ma in un'unica immagine alta quanto serve (come Zen-Staff).
-export async function exportTablePng(cid, dates, scale = 2) {
+// nameMode: 'full' (default) mostra nome e cognome; 'first' solo il nome di battesimo.
+export async function exportTablePng(cid, dates, scale = 2, nameMode = 'full') {
   const company = co(cid);
   const shifts = companyShiftTypes(company);
   const roles = companyRoles(company);
   const from = dates[0], to = dates[dates.length - 1];
   const spanMonths = new Set(dates.map(d => d.slice(0, 7))).size > 1;
-  const { svg, w, h } = buildTableSVG(company, shifts, roles, dates, { from, to, spanMonths, page: 1, pages: 1 });
+  const { svg, w, h } = buildTableSVG(company, shifts, roles, dates, { from, to, spanMonths, page: 1, pages: 1, nameMode });
   const { blob } = await rasterize(svg, w, h, scale, 'image/png');
-  return { blob, name: `turni_${slug(company.name)}_${from}_${to}.png` };
+  const suffix = nameMode === 'first' ? '_nomi' : '';
+  return { blob, name: `turni_${slug(company.name)}_${from}_${to}${suffix}.png` };
 }
 
 // ================= orchestrazione: ZIP di prospetti individuali (PDF o PNG) =================

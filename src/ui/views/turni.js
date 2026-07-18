@@ -130,9 +130,7 @@ export function render() {
   // export del periodo visualizzato (visibili con la sezione: nessun permesso nuovo)
   const canExport = roles.length && shifts.length && emps.length;
   const exportBtns = canExport
-    ? `<button class="btn sm" id="btnPdfTable" title="PDF della tabella turni del periodo (uso interno)">🖨️ PDF tabella</button>
-       <button class="btn sm" id="btnPngTable" title="PNG della tabella turni del periodo (immagine intera)">🖼️ PNG tabella</button>
-       <button class="btn sm" id="btnZipEmp" title="ZIP con un prospetto turni per dipendente (PDF o PNG)">📦 ZIP dipendenti</button>`
+    ? `<button class="btn sm" id="btnExport" title="Esporta la tabella turni o i prospetti per dipendente">📤 Esporta</button>`
     : '';
 
   let h = `<div class="pagehead"><h1>Turni</h1><span class="sub">${esc((company?.emoji || '') + ' ' + company?.name)}</span>
@@ -329,41 +327,46 @@ export function bind(root) {
     finally { btn.disabled = false; btn.innerHTML = old; }
   };
   const periodDates = () => viewDays().map(d => d.date);
-  const btnPdf = root.querySelector('#btnPdfTable');
-  if (btnPdf) btnPdf.onclick = () => withBusy(btnPdf, '⏳ Genero…', async () => {
-    const { blob, name } = await exportTablePdf(cid, periodDates());
-    downloadBlob(name, blob); toast('PDF tabella generato');
+  const btnExport = root.querySelector('#btnExport');
+  // esegue la voce scelta dal menu Esporta (stato busy sul bottone durante la generazione)
+  const runExport = (action) => withBusy(btnExport, '⏳ Genero…', async () => {
+    if (action === 'pdf') {
+      const { blob, name } = await exportTablePdf(cid, periodDates());
+      downloadBlob(name, blob); toast('PDF tabella generato');
+    } else if (action === 'png' || action === 'png-first') {
+      const nameMode = action === 'png-first' ? 'first' : 'full';
+      const { blob, name } = await exportTablePng(cid, periodDates(), 2, nameMode);
+      downloadBlob(name, blob); toast(action === 'png-first' ? 'PNG tabella (solo nomi) generato' : 'PNG tabella generato');
+    } else if (action === 'zip-pdf' || action === 'zip-png') {
+      const format = action === 'zip-pdf' ? 'pdf' : 'png';
+      const { blob, count, name } = await exportEmployeesZip(cid, periodDates(), 2, format);
+      if (!count) { toast('Nessun turno assegnato nel periodo'); return; }
+      downloadBlob(name, blob); toast(`ZIP con ${count} prospett${count === 1 ? 'o' : 'i'} ${format.toUpperCase()}`);
+    }
   });
-  const btnPng = root.querySelector('#btnPngTable');
-  if (btnPng) btnPng.onclick = () => withBusy(btnPng, '⏳ Genero…', async () => {
-    const { blob, name } = await exportTablePng(cid, periodDates());
-    downloadBlob(name, blob); toast('PNG tabella generato');
-  });
-  // ZIP dipendenti: piccolo menu di scelta formato (PDF paginato o PNG immagine unica)
-  const btnZip = root.querySelector('#btnZipEmp');
-  const runZip = (format) => withBusy(btnZip, '⏳ Genero…', async () => {
-    const { blob, count, name } = await exportEmployeesZip(cid, periodDates(), 2, format);
-    if (!count) { toast('Nessun turno assegnato nel periodo'); return; }
-    downloadBlob(name, blob); toast(`ZIP con ${count} prospett${count === 1 ? 'o' : 'i'} ${format.toUpperCase()}`);
-  });
-  if (btnZip) btnZip.onclick = () => {
-    if (btnZip.disabled) return;
-    const openPop = document.querySelector('.zip-pop');
+  // menu a tendina unico per tutti gli export (chiusura con Esc/click fuori)
+  if (btnExport) btnExport.onclick = () => {
+    if (btnExport.disabled) return;
+    const openPop = document.querySelector('.export-pop');
     if (openPop) { openPop.remove(); return; }
-    const r = btnZip.getBoundingClientRect();
+    const r = btnExport.getBoundingClientRect();
     const pop = document.createElement('div');
-    pop.className = 'extra-pop zip-pop';
-    pop.innerHTML = `<button class="btn sm" data-fmt="pdf">📄 PDF (A4, paginato)</button>
-      <button class="btn sm" data-fmt="png">🖼️ PNG (immagine unica)</button>`;
+    pop.className = 'extra-pop export-pop';
+    pop.innerHTML = `<button class="btn sm" data-exp="pdf">🖨️ PDF tabella</button>
+      <button class="btn sm" data-exp="png">🖼️ PNG tabella</button>
+      <button class="btn sm" data-exp="png-first">🖼️ PNG tabella (solo nomi)</button>
+      <div class="exp-sep"></div>
+      <button class="btn sm" data-exp="zip-pdf">📦 ZIP dipendenti · PDF</button>
+      <button class="btn sm" data-exp="zip-png">📦 ZIP dipendenti · PNG</button>`;
     document.body.appendChild(pop);
     const left = Math.min(Math.round(r.left), window.innerWidth - pop.offsetWidth - 8);
-    pop.style.left = left + 'px'; pop.style.top = Math.round(r.bottom + 4) + 'px';
+    pop.style.left = Math.max(8, left) + 'px'; pop.style.top = Math.round(r.bottom + 4) + 'px';
     const close = () => { pop.remove(); document.removeEventListener('mousedown', onDoc, true); document.removeEventListener('keydown', onKey, true); };
-    const onDoc = (ev) => { if (!pop.contains(ev.target) && ev.target !== btnZip) close(); };
+    const onDoc = (ev) => { if (!pop.contains(ev.target) && ev.target !== btnExport) close(); };
     const onKey = (ev) => { if (ev.key === 'Escape') close(); };
     document.addEventListener('mousedown', onDoc, true);
     document.addEventListener('keydown', onKey, true);
-    pop.querySelectorAll('[data-fmt]').forEach(b => b.onclick = () => { const f = b.dataset.fmt; close(); runZip(f); });
+    pop.querySelectorAll('[data-exp]').forEach(b => b.onclick = () => { const a = b.dataset.exp; close(); runExport(a); });
   };
 
   // pennello (dipendente / gomma / Sposta)
