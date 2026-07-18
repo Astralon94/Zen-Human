@@ -26,7 +26,8 @@ export const DEFAULT_DATA = () => ({
   employees: [],
   // presenze: una riga per dipendente + giorno. {id,companyId,employeeId,date:'YYYY-MM-DD',
   //   status:STATUS_KEY, amount (importo da scalare dal netto, opzionale; per permesso_nr è override del netto/26),
-  //   shift ('mattina'|'pomeriggio'|'notte'|null, solo per "present"), shiftBonus (bonus del turno, +netto), note,
+  //   shift ('mattina'|'pomeriggio'|'notte'|null, solo per "present"), shiftBonus (bonus del turno, +netto),
+  //   confirmed (bool, solo per "present": presenza confermata dell'utente; una nuova nasce false), note,
   //   attachments:[{id,name,size,type,addedAt}] (certificati per malattia/infortunio; binari in attachments_bin)}
   attendance: [],
   // voci economiche mensili: {id,companyId,employeeId,month:'YYYY-MM',
@@ -97,6 +98,10 @@ export function migrate(d) {
     if (a.shift === undefined) a.shift = null;
     if (a.shiftBonus == null) a.shiftBonus = 0;
     if (!Array.isArray(a.attachments)) a.attachments = []; // certificati (malattia/infortunio)
+    // conferma presenza (flag di workflow visivo): significativo solo per "present".
+    // Storici privi del campo = già confermati (non devono apparire da riconfermare).
+    if (a.status === 'present') { if (a.confirmed === undefined) a.confirmed = true; }
+    else a.confirmed = false;
   });
   // voci: timestamp di inserimento per lo storico data/ora (retro-compat dai vecchi senza createdAt)
   d.entries.forEach(x => { if (x.createdAt == null) x.createdAt = (x.date ? Date.parse(x.date + 'T12:00:00') : 0) || Date.now(); });

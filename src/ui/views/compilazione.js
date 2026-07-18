@@ -12,7 +12,7 @@ import { openSheet, closeSheet, confirmDialog, toast } from '../dom.js';
 import { attachmentsHTML, bindAttachments } from '../attachments.js';
 import { getMonth, setMonth } from './dipendenti.js';
 
-let brush = null; // null = Dettaglio; '__erase' = gomma; altrimenti chiave stato
+let brush = null; // null = Dettaglio; '__erase' = gomma; '__confirm' = conferma presenza; altrimenti chiave stato
 
 export function render() {
   const cid = activeCompany();
@@ -21,7 +21,8 @@ export function render() {
   const locked = isMonthLocked(cid, month);    // mese chiuso: nessuna scrittura di presenze
   const canCrea = can('presenze.crea') && !locked;   // pennello stati + salva su cella nuova
   const canDel = can('presenze.elimina') && !locked; // gomma / svuota cella
-  const canPaint = canCrea || canDel;          // barra pennello visibile
+  const canConf = can('presenze.modifica') && !locked; // conferma/annulla conferma presenza
+  const canPaint = canCrea || canDel || canConf;     // barra pennello visibile
   if (!canPaint) brush = null;   // niente pennello: il tocco apre la scheda del giorno (lettura o modifica)
   const emps = companyEmployees(cid);
 
@@ -46,6 +47,7 @@ export function render() {
         ${b('', '✏️ Dettaglio', 'Dettaglio: apre la scheda del giorno')}
         ${canCrea ? STATUS_ORDER.map(k => b(k, `${STATUSES[k].emoji} ${STATUSES[k].short}`, STATUSES[k].label)).join('') : ''}
         ${canDel ? b('__erase', '🧽 Gomma', 'Svuota la cella') : ''}
+        ${canConf ? b('__confirm', '✓ Conferma', 'Conferma la presenza (tocca una cella presente)') : ''}
       </div>
     </div>`;
   }
@@ -89,6 +91,12 @@ function cellHTML(e, ds) {
     const info = statusInfo(cell.status);
     const mark = (cellDeduction(e, getMonth(), cell) > 0 || cell.shiftBonus) ? '<sup>•</sup>' : '';
     const clip = cell.attachments?.length ? '<sup>📎</sup>' : '';
+    // Presente: quattro gradazioni di verde per turno (non spec./mattina/pomeriggio/notte) via CSS.
+    if (cell.status === 'present') {
+      // presenza non ancora confermata: segno d'angolo discreto (classe unconfirmed)
+      const unconf = cell.confirmed === false ? ' unconfirmed' : '';
+      return `<td class="mcell present sh-${cell.shift || 'none'}${unconf}" data-emp="${e.id}" data-day="${ds}">${info.short}${mark}${clip}</td>`;
+    }
     return `<td class="mcell" data-emp="${e.id}" data-day="${ds}" style="background:${info.color};color:#fff">${info.short}${mark}${clip}</td>`;
   }
   return `<td class="mcell unset ${wknd ? 'wknd' : ''}" data-emp="${e.id}" data-day="${ds}"></td>`;
@@ -119,17 +127,31 @@ function bindCells(root) {
 }
 
 function paintCell(e, ds, td) {
-  // gomma = eliminazione; stato = compilazione (crea)
-  if (brush === '__erase' ? !can('presenze.elimina') : !can('presenze.crea')) return;
   if (isMonthLocked(e.companyId, getMonth())) return;   // mese chiuso: niente scritture
   const month = getMonth();
   const ex = data.attendance.find(a => a.employeeId === e.id && a.date === ds);
-  if (brush === '__erase') {
+  if (brush === '__confirm') {
+    // conferma = flag di workflow: toggle solo sulle celle "present", nessuna creazione
+    if (!can('presenze.modifica')) return;
+    if (!ex || ex.status !== 'present') return;
+    ex.confirmed = !(ex.confirmed !== false); // se confermata (true/undef) → false, altrimenti → true
+  } else if (brush === '__erase') {
+    // gomma = eliminazione
+    if (!can('presenze.elimina')) return;
     if (ex) data.attendance = data.attendance.filter(a => a !== ex);
   } else {
+    // stato = compilazione (crea)
+    if (!can('presenze.crea')) return;
     const isAbs = STATUSES[brush]?.kind === 'absence';
-    if (ex) { const same = ex.status === brush; ex.status = brush; ex.amount = isAbs ? (same ? ex.amount || 0 : 0) : 0; if (brush !== 'present') { ex.shift = null; ex.shiftBonus = 0; } }
-    else data.attendance.push({ id: uid(), companyId: e.companyId, employeeId: e.id, date: ds, status: brush, amount: 0, shift: null, shiftBonus: 0, note: '' });
+    if (ex) {
+      const same = ex.status === brush;
+      const wasPresent = ex.status === 'present';
+      ex.status = brush; ex.amount = isAbs ? (same ? ex.amount || 0 : 0) : 0;
+      if (brush !== 'present') { ex.shift = null; ex.shiftBonus = 0; ex.confirmed = false; }
+      else if (!wasPresent) ex.confirmed = false;   // nuova presenza → da confermare
+    } else {
+      data.attendance.push({ id: uid(), companyId: e.companyId, employeeId: e.id, date: ds, status: brush, amount: 0, shift: null, shiftBonus: 0, confirmed: false, note: '' });
+    }
   }
   save();
   replaceCell(td, e, ds);
@@ -172,6 +194,7 @@ function dayEditor(e, ds, td) {
         </div>
       </div>
       <div class="field"><label>Bonus turno (opzionale, si somma al netto)</label><input id="f_sbonus" inputmode="decimal" value="${cell?.shiftBonus ? fmtNum(cell.shiftBonus) : ''}" placeholder="0,00"></div>
+      <div class="field"><label><input type="checkbox" id="f_confirmed" ${cell?.status === 'present' && cell.confirmed !== false ? 'checked' : ''}> Presenza confermata</label></div>
     </div>
     <div class="field" id="amtwrap" style="${cell && STATUSES[cell.status]?.kind === 'absence' ? '' : 'display:none'}">
       <label id="amtlbl">Importo da scalare (opzionale)</label><input id="f_amt" inputmode="decimal" value="${cell?.amount ? fmtNum(cell.amount) : ''}" placeholder="0,00">
@@ -215,10 +238,11 @@ function dayEditor(e, ds, td) {
       const amt = STATUSES[status]?.kind === 'absence' ? (parseAmount(amtInput.value) || 0) : 0;
       const sBonus = isPresent ? (parseAmount(sheet.querySelector('#f_sbonus').value) || 0) : 0;
       const sShift = isPresent ? shift : null;
+      const confirmed = isPresent ? !!sheet.querySelector('#f_confirmed').checked : false;
       const note = sheet.querySelector('#f_note').value.trim();
       const ex = data.attendance.find(a => a.employeeId === e.id && a.date === ds);
-      if (ex) { ex.status = status; ex.amount = amt; ex.shift = sShift; ex.shiftBonus = sBonus; ex.note = note; }
-      else data.attendance.push({ id: uid(), companyId: e.companyId, employeeId: e.id, date: ds, status, amount: amt, shift: sShift, shiftBonus: sBonus, note });
+      if (ex) { ex.status = status; ex.amount = amt; ex.shift = sShift; ex.shiftBonus = sBonus; ex.confirmed = confirmed; ex.note = note; }
+      else data.attendance.push({ id: uid(), companyId: e.companyId, employeeId: e.id, date: ds, status, amount: amt, shift: sShift, shiftBonus: sBonus, confirmed, note });
       save(); closeSheet(); replaceCell(td, e, ds); updateNetto(e, getMonth());
     });
     const clr = sheet.querySelector('[data-clear]');

@@ -21,8 +21,8 @@ const sample = {
     attachments: [{ id: 'doc1', name: 'contratto.pdf', size: 1234, type: 'application/pdf', addedAt: 1500 }],
   }],
   attendance: [
-    { id: 'a1', companyId: 'co1', employeeId: 'e1', date: '2026-06-30', status: 'present', amount: 0, shift: 'notte', shiftBonus: 5, note: '', attachments: [] },
-    { id: 'a2', companyId: 'co1', employeeId: 'e1', date: '2026-07-01', status: 'malattia', amount: 0, shift: null, shiftBonus: 0, note: '', attachments: [{ id: 'cert1', name: 'certificato.pdf', size: 999, type: 'application/pdf', addedAt: 1600 }] },
+    { id: 'a1', companyId: 'co1', employeeId: 'e1', date: '2026-06-30', status: 'present', amount: 0, shift: 'notte', shiftBonus: 5, confirmed: true, note: '', attachments: [] },
+    { id: 'a2', companyId: 'co1', employeeId: 'e1', date: '2026-07-01', status: 'malattia', amount: 0, shift: null, shiftBonus: 0, confirmed: false, note: '', attachments: [{ id: 'cert1', name: 'certificato.pdf', size: 999, type: 'application/pdf', addedAt: 1600 }] },
   ],
   entries: [{ id: 'x1', companyId: 'co1', employeeId: 'e1', month: '2026-06', kind: 'bonus', amount: 50, date: '2026-06-15', desc: 'premio', createdAt: 3000 }],
 };

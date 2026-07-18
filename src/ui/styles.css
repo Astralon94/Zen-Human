@@ -4,6 +4,14 @@
   --bg: #f6f5f2; --card: #ffffff; --card2: #faf9f6; --line: #eae7e1;
   --txt: #26251f; --sub: #8f8d84; --faint: #b9b6ac; --accent: #4f8a76; --accent-soft: #e9f1ee;
   --green: #4f8a76; --red: #c2685f; --orange: #c98a52; --blue: #5b83a6; --purple: #8b7fa8;
+  /* Presenza per turno (compilazione): scala salvia armonica, dal chiaro allo scuro.
+     none=non specificato · morning=mattina · afternoon=pomeriggio · night=notte.
+     I chiari usano testo scuro, gli scuri testo bianco, per la leggibilità. */
+  --present-none: #b1d3c6;      --present-none-fg: #2c5344;
+  --present-morning: #7cb6a0;   --present-morning-fg: #234438;
+  --present-afternoon: #4f8a76; --present-afternoon-fg: #ffffff;
+  --present-night: #30594a;     --present-night-fg: #ffffff;
+  --present-mark: 58%;          /* opacità del segno d'angolo "presenza non confermata" */
   --radius: 16px; --shadow: 0 1px 2px rgba(40,38,32,.04), 0 8px 24px rgba(40,38,32,.05);
   --fs: 15px;
 }
@@ -11,6 +19,12 @@
   --bg: #12120f; --card: #1a1a16; --card2: #201f1b; --line: #2c2b25;
   --txt: #ededea; --sub: #918f88; --faint: #6a685f; --accent: #82b6a4; --accent-soft: #18241f;
   --green: #82b6a4; --red: #d98b82; --orange: #d6a06b; --blue: #88a8c8; --purple: #b3a6cc;
+  /* Presenza per turno (compilazione) — scala salvia per tema scuro, sempre distinguibile. */
+  --present-none: #a2cdbd;      --present-none-fg: #14261f;
+  --present-morning: #74b49b;   --present-morning-fg: #12241c;
+  --present-afternoon: #4f9278; --present-afternoon-fg: #ffffff;
+  --present-night: #346552;     --present-night-fg: #ffffff;
+  --present-mark: 52%;          /* opacità del segno d'angolo "presenza non confermata" (dark) */
   --shadow: 0 1px 2px rgba(0,0,0,.30), 0 8px 24px rgba(0,0,0,.22);
 }
 * { box-sizing: border-box; }
@@ -205,9 +219,22 @@ table.matrix thead th.wknd { color: color-mix(in srgb, var(--sub) 60%, var(--red
 table.matrix thead th.today { box-shadow: inset 0 -2px 0 var(--accent); color: var(--accent); }
 table.matrix .namecol { position: sticky; left: 0; z-index: 3; width: 170px; background: var(--card); text-align: left; padding: 6px 10px; border-right: 1px solid var(--line); }
 table.matrix thead .namecol { z-index: 4; background: var(--card2); }
-table.matrix tbody td.mcell { height: 34px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); cursor: pointer; color: #fff; font-weight: 700; font-size: 10px; overflow: hidden; }
+table.matrix tbody td.mcell { position: relative; height: 34px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); cursor: pointer; color: #fff; font-weight: 700; font-size: 10px; overflow: hidden; }
 table.matrix tbody td.mcell.unset { color: var(--sub); background: var(--card); }
 table.matrix tbody td.mcell.unset.wknd { background: color-mix(in srgb, var(--line) 45%, transparent); }
+/* Presenza per turno: quattro gradazioni di verde (vedi token --present-*). */
+table.matrix tbody td.mcell.present.sh-none { background: var(--present-none); color: var(--present-none-fg); }
+table.matrix tbody td.mcell.present.sh-mattina { background: var(--present-morning); color: var(--present-morning-fg); }
+table.matrix tbody td.mcell.present.sh-pomeriggio { background: var(--present-afternoon); color: var(--present-afternoon-fg); }
+table.matrix tbody td.mcell.present.sh-notte { background: var(--present-night); color: var(--present-night-fg); }
+/* Presenza non confermata: triangolino d'angolo (alto-destra) discreto. Usa currentColor
+   = il testo della cella (token --present-*-fg), quindi contrasta su tutte le 4 gradazioni
+   e in entrambi i temi senza cambiare lo sfondo. */
+table.matrix tbody td.mcell.present.unconfirmed::after {
+  content: ""; position: absolute; top: 0; right: 0; width: 0; height: 0;
+  border-top: 7px solid color-mix(in srgb, currentColor var(--present-mark), transparent);
+  border-left: 7px solid transparent;
+}
 table.matrix tbody td.mcell:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 table.matrix td.mcell sup { font-size: 11px; line-height: 0; }
 table.matrix .nettocol { position: sticky; right: 0; z-index: 3; width: 96px; background: var(--card); text-align: right; padding: 6px 12px; font-variant-numeric: tabular-nums; font-weight: 700; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
