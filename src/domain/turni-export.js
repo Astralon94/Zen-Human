@@ -229,26 +229,32 @@ function buildTableSVG(company, shifts, roles, days, meta) {
       if (si > 0) s += line(x0 + wDay, ry, permX, ry, C.hair, 1);
     });
     // colonna "Permessi": fondo neutro + elenco assenze del giorno (nome + sigla stato). Blocco a
-    // rowspan sull'intero giorno; il testo si rimpicciolisce e, se serve, tronca con "+N" per non sbordare.
+    // rowspan sull'intero giorno; se le voci superano le righe disponibili si passa a DUE colonne
+    // interne (riempite dall'alto in basso), poi si riduce il corpo; il "+N" resta solo come
+    // estrema ratio se nemmeno due colonne a corpo ridotto bastano.
     s += rect(permX, top, wPerm, blockH, C.head);
     const abs = dayAbsences(company.id, date);
     if (abs.length) {
       const padV = 6, availH = blockH - padV * 2;
-      // font: 10 di base; se le voci non entrano, scende a 8.5
       let fs = 10, lineH = fs + 2.5;
-      let maxLines = Math.max(1, Math.floor(availH / lineH));
-      if (abs.length > maxLines) { fs = 8.5; lineH = fs + 2; maxLines = Math.max(1, Math.floor(availH / lineH)); }
+      let rowsFit = Math.max(1, Math.floor(availH / lineH));
+      let nCols = abs.length > rowsFit ? 2 : 1;
+      if (abs.length > rowsFit * nCols) { fs = 8.5; lineH = fs + 2; rowsFit = Math.max(1, Math.floor(availH / lineH)); }
+      const cap = rowsFit * nCols;
       let show = abs, overflow = 0;
-      if (abs.length > maxLines) { show = abs.slice(0, Math.max(1, maxLines - 1)); overflow = abs.length - show.length; }
-      const maxChars = Math.max(4, Math.floor((wPerm - 16) / (fs * 0.56)));
-      let ty = top + padV + fs;
-      show.forEach(a => {
+      if (abs.length > cap) { show = abs.slice(0, Math.max(1, cap - 1)); overflow = abs.length - show.length; }
+      const colW = (wPerm - 16) / nCols;
+      const maxChars = Math.max(4, Math.floor(colW / (fs * 0.56)));
+      show.forEach((a, i) => {
+        const ci = Math.floor(i / rowsFit), ri = i % rowsFit;
         const nm = cellName(a.e, nameMode);
         const sigla = STATUSES[a.status]?.short || '?';
-        s += text(permX + 8, ty, clampLabel(`${nm} (${sigla})`, maxChars), { size: fs, fill: C.txt });
-        ty += lineH;
+        s += text(permX + 8 + ci * colW, top + padV + fs + ri * lineH, clampLabel(`${nm} (${sigla})`, maxChars), { size: fs, fill: C.txt });
       });
-      if (overflow) s += text(permX + 8, ty, `+${overflow}`, { size: fs, fill: C.sub, weight: 700 });
+      if (overflow) {
+        const i = show.length, ci = Math.floor(i / rowsFit), ri = i % rowsFit;
+        s += text(permX + 8 + ci * colW, top + padV + fs + ri * lineH, `+${overflow}`, { size: fs, fill: C.sub, weight: 700 });
+      }
     } else {
       s += text(permX + 8, top + blockH / 2 + 4, '—', { size: 10, fill: C.sub });
     }
