@@ -372,6 +372,7 @@ function empSheet(e) {
       <div class="field"><label>Nome *</label><input id="f_first" value="${esc(e?.firstName || '')}"></div>
       <div class="field"><label>Cognome *</label><input id="f_last" value="${esc(e?.lastName || '')}"></div>
     </div>
+    <div class="field"><label>ID (username)</label><input id="f_nick" value="${esc(e?.nickname || '')}" placeholder="Es. fra94"></div>
     <div class="field"><label>Mansione / qualifica</label><input id="f_role" value="${esc(e?.role || '')}" placeholder="Es. Operaio, Impiegata…"></div>
     <div class="field"><label>Tipo di contratto</label><input id="f_contract" value="${esc(e?.contract || '')}" placeholder="Es. Tempo indeterminato, Determinato, Apprendistato"></div>
     <div class="frow">
@@ -409,8 +410,12 @@ function empSheet(e) {
       const last = sheet.querySelector('#f_last').value.trim();
       if (!first && !last) { toast('Inserisci nome o cognome'); return; }
       const cOpen = sheet.querySelector('#f_copen').checked;
+      const nickname = sheet.querySelector('#f_nick').value.trim();
+      // avviso discreto (non bloccante): stesso ID già usato da un altro dipendente dell'azienda
+      const nickDup = !!nickname && companyEmployees(cid, { includeInactive: true })
+        .some(x => x.id !== e?.id && (x.nickname || '').trim().toLowerCase() === nickname.toLowerCase());
       const obj = {
-        firstName: first, lastName: last, role: sheet.querySelector('#f_role').value.trim(), color,
+        firstName: first, lastName: last, nickname, role: sheet.querySelector('#f_role').value.trim(), color,
         contract: sheet.querySelector('#f_contract').value.trim(),
         contractStart: sheet.querySelector('#f_cstart').value || '',
         contractOpen: cOpen,
@@ -429,7 +434,7 @@ function empSheet(e) {
         data.employees.push(ne);
         selectedId = ne.id;
       }
-      save(); closeSheet(); rerender(); toast('Dipendente salvato ✓');
+      save(); closeSheet(); rerender(); toast(nickDup ? 'Salvato · attenzione: ID già usato da un altro dipendente' : 'Dipendente salvato ✓');
     });
     const del = sheet.querySelector('[data-del]');
     if (del) del.onclick = () => confirmDialog('Eliminare il dipendente?', 'Verranno rimosse anche tutte le presenze e voci collegate.', 'Elimina', () => {

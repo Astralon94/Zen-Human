@@ -20,7 +20,8 @@ export const DEFAULT_DATA = () => ({
   //     giorno·turno·ruolo coperta da un collaboratore ESTERNO non in anagrafica; SOLO visivo — non crea presenze,
   //     non entra in conteggi/netto)}
   companies: [{ id: 'co1', name: 'Azienda 1', emoji: '🏢', color: '#4f8a76', piva: '', cf: '', note: '', lockedMonths: [], shiftTypes: DEFAULT_SHIFT_TYPES(), roles: [], extras: [] }],
-  // dipendenti: {id,companyId,firstName,lastName,role,emoji,active,createdAt,
+  // dipendenti: {id,companyId,firstName,lastName,nickname,role,emoji,active,createdAt,
+  //   nickname (ID/username amichevole, es. "fra94"; opzionale, usato negli export — NON è l'id tecnico),
   //   contract (tipo contratto, testo libero), contractStart/contractEnd/contractOpen (scadenza contratto),
   //   librettoSanitario ('YYYY-MM-DD'|'' scadenza libretto sanitario),
   //   ferieAnnue (giorni di ferie/anno; 0 = non configurato), rolAnnui (giorni di permesso ROL/anno; 0 = non configurato),
@@ -163,6 +164,7 @@ export function migrate(d) {
     if (!Array.isArray(e.loans)) e.loans = [];
     e.loans.forEach(l => { if (!Array.isArray(l.plan)) l.plan = []; });
     if (e.active == null) e.active = true;
+    if (e.nickname == null) e.nickname = '';   // ID/username amichevole (opzionale, usato negli export)
     if (e.contract == null) e.contract = '';
     if (e.contractStart == null) e.contractStart = '';   // 'YYYY-MM-DD' | ''
     if (e.contractEnd == null) e.contractEnd = '';        // 'YYYY-MM-DD' | '' (vuoto se indeterminato)

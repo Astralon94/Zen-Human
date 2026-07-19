@@ -333,10 +333,11 @@ export function bind(root) {
     if (action === 'pdf') {
       const { blob, name } = await exportTablePdf(cid, periodDates());
       downloadBlob(name, blob); toast('PDF tabella generato');
-    } else if (action === 'png' || action === 'png-first') {
-      const nameMode = action === 'png-first' ? 'first' : 'full';
+    } else if (action === 'png' || action === 'png-first' || action === 'png-id') {
+      const nameMode = action === 'png-first' ? 'first' : action === 'png-id' ? 'id' : 'full';
       const { blob, name } = await exportTablePng(cid, periodDates(), 2, nameMode);
-      downloadBlob(name, blob); toast(action === 'png-first' ? 'PNG tabella (solo nomi) generato' : 'PNG tabella generato');
+      downloadBlob(name, blob);
+      toast(action === 'png-first' ? 'PNG tabella (solo nomi) generato' : action === 'png-id' ? 'PNG tabella (ID) generato' : 'PNG tabella generato');
     } else if (action === 'zip-pdf' || action === 'zip-png') {
       const format = action === 'zip-pdf' ? 'pdf' : 'png';
       const { blob, count, name } = await exportEmployeesZip(cid, periodDates(), 2, format);
@@ -355,6 +356,7 @@ export function bind(root) {
     pop.innerHTML = `<button class="btn sm" data-exp="pdf">🖨️ PDF tabella</button>
       <button class="btn sm" data-exp="png">🖼️ PNG tabella</button>
       <button class="btn sm" data-exp="png-first">🖼️ PNG tabella (solo nomi)</button>
+      <button class="btn sm" data-exp="png-id">🪪 PNG tabella (ID)</button>
       <div class="exp-sep"></div>
       <button class="btn sm" data-exp="zip-pdf">📦 ZIP dipendenti · PDF</button>
       <button class="btn sm" data-exp="zip-png">📦 ZIP dipendenti · PNG</button>`;

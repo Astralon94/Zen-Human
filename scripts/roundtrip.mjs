@@ -21,7 +21,7 @@ const sample = {
     extras: [{ id: 'ex1', date: '2026-06-30', shift: 'pomeriggio', roleId: 'r2', name: 'Luca (agenzia)' }],
   }],
   employees: [{
-    id: 'e1', companyId: 'co1', firstName: 'Mario', lastName: 'Rossi', role: 'Banconista', color: '#4f8a76',
+    id: 'e1', companyId: 'co1', firstName: 'Mario', lastName: 'Rossi', nickname: 'mario94', role: 'Banconista', color: '#4f8a76',
     active: true, createdAt: 1000, contract: 'Tempo pieno', contractStart: '2021-01-01', contractEnd: '',
     contractOpen: true, librettoSanitario: '', ferieAnnue: 26, rolAnnui: 8, notePrivate: 'nota', noteConsultant: '',
     salaries: [{ month: '2026-06', net: 1200 }, { month: '2026-07', net: 1250 }],

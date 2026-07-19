@@ -148,9 +148,11 @@ function dayAbsences(cid, date) {
     .sort((x, y) => fullName(x.e).localeCompare(fullName(y.e)));
 }
 
-// nome per le celle della tabella: completo, oppure solo il nome di battesimo ('first').
-// In 'first' senza nome di battesimo si ripiega sul nome completo (mai vuoto).
+// nome per le celle della tabella: completo ('full'), solo il nome di battesimo ('first'),
+// oppure l'ID/username amichevole del dipendente ('id'). In 'first' e in 'id' senza valore
+// si ripiega sul nome di battesimo, e in ultima istanza sul nome completo (mai vuoto).
 function cellName(e, mode) {
+  if (mode === 'id') { const nk = (e.nickname || '').trim(); if (nk) return nk; const fn = (e.firstName || '').trim(); return fn || fullName(e); }
   if (mode === 'first') { const fn = (e.firstName || '').trim(); return fn || fullName(e); }
   return fullName(e);
 }
@@ -163,7 +165,7 @@ function clampLabel(str, maxChars) {
 // ================= SVG: griglia turni (una pagina = un blocco di giorni) =================
 function buildTableSVG(company, shifts, roles, days, meta) {
   const n = shifts.length;
-  const nameMode = meta.nameMode === 'first' ? 'first' : 'full';
+  const nameMode = (meta.nameMode === 'first' || meta.nameMode === 'id') ? meta.nameMode : 'full';
   const shColors = shifts.map((_, i) => ({ bg: shiftBgHex(i, n, SH.light, SH.dark), fg: shiftFgHex(i, n, SH.fgDark) }));
   // colonna "Permessi" (assenze del giorno) in coda: larghezza fissa; i ruoli si restringono un filo se serve.
   const wDay = 78, wShift = 116, wPerm = 168;
@@ -340,7 +342,8 @@ export async function exportTablePdf(cid, dates, scale = 2) {
 
 // ================= orchestrazione: PNG tabella (immagine intera, non paginata) =================
 // Stessa griglia del PDF ma in un'unica immagine alta quanto serve (come Zen-Staff).
-// nameMode: 'full' (default) mostra nome e cognome; 'first' solo il nome di battesimo.
+// nameMode: 'full' (default) mostra nome e cognome; 'first' solo il nome di battesimo;
+// 'id' l'ID/username amichevole (fallback al nome di battesimo se vuoto).
 export async function exportTablePng(cid, dates, scale = 2, nameMode = 'full') {
   const company = co(cid);
   const shifts = companyShiftTypes(company);
@@ -349,7 +352,7 @@ export async function exportTablePng(cid, dates, scale = 2, nameMode = 'full') {
   const spanMonths = new Set(dates.map(d => d.slice(0, 7))).size > 1;
   const { svg, w, h } = buildTableSVG(company, shifts, roles, dates, { from, to, spanMonths, page: 1, pages: 1, nameMode });
   const { blob } = await rasterize(svg, w, h, scale, 'image/png');
-  const suffix = nameMode === 'first' ? '_nomi' : '';
+  const suffix = nameMode === 'first' ? '_nomi' : nameMode === 'id' ? '_id' : '';
   return { blob, name: `turni_${slug(company.name)}_${from}_${to}${suffix}.png` };
 }
 
