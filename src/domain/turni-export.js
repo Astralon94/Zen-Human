@@ -294,7 +294,7 @@ function buildEmployeeSVG(company, e, rows, meta) {
     if (r.first) s += text(x0 + 8, y + rowH / 2 + 4, `${pad2(dayNum(r.date))} ${monShort(r.date)} · ${dow(r.date)}`, { size: 11.5, weight: 600 });
     s += `<circle cx='${x0 + wDate + 12}' cy='${y + rowH / 2}' r='4' fill='${r.color}'/>`;
     s += text(x0 + wDate + 22, y + rowH / 2 + 4, r.shiftLabel, { size: 11.5 });
-    s += text(x0 + wDate + wShift + 8, y + rowH / 2 + 4, r.role || '—', { size: 11.5, fill: r.role ? C.txt : C.sub });
+    if (r.role || !r.absence) s += text(x0 + wDate + wShift + 8, y + rowH / 2 + 4, r.role || '—', { size: 11.5, fill: r.role ? C.txt : C.sub });
     s += line(x0, y, x0 + W, y, C.hair, 1);
     y += rowH;
   });
@@ -362,41 +362,49 @@ export async function exportEmployeesZip(cid, dates, scale = 2, format = 'pdf') 
   const company = co(cid);
   const shifts = companyShiftTypes(company);
   const from = dates[0], to = dates[dates.length - 1];
-  // dipendenti con almeno un turno nel periodo (anche non attivi, se assegnati)
+  // dipendenti con almeno un turno O un'assenza nel periodo (anche non attivi, se assegnati)
   const emps = companyEmployees(cid, { includeInactive: true })
-    .filter(e => employeeShifts(cid, e.id, dates, shifts).length);
+    .filter(e => employeeShifts(cid, e.id, dates, shifts).length || employeeAbsences(cid, e.id, dates).length);
 
   const files = [];
   const used = new Set();
   const ROWS_PER_PAGE = 26;
   for (const e of emps) {
-    const list = employeeShifts(cid, e.id, dates, shifts);
-    // righe del prospetto (una per turno; "first" segna la prima riga del giorno)
+    // righe del prospetto: turni E assenze in un'unica lista per data. Le assenze (ferie,
+    // malattia, riposo…) compaiono con l'etichetta dello stato nella colonna Turno e la
+    // cella Ruolo vuota — niente più coda "Assenze nel periodo" in fondo.
+    const shiftOrder = new Map(shifts.map((t, i) => [t.id, i]));
+    const entries = [
+      ...employeeShifts(cid, e.id, dates, shifts).map(a => ({ a, abs: false })),
+      ...employeeAbsences(cid, e.id, dates).map(a => ({ a, abs: true })),
+    ].sort((x, y) => x.a.date.localeCompare(y.a.date) ||
+      (x.abs ? 99 : (shiftOrder.get(x.a.shift) ?? 98)) - (y.abs ? 99 : (shiftOrder.get(y.a.shift) ?? 98)));
     const rows = [];
     let prevDate = null;
-    list.forEach(a => {
-      const t = shiftTypeById(company, a.shift);
-      const r = roleById(company, a.roleId);
-      const label = t ? t.name : '—';
-      const i = shifts.findIndex(x => x.id === a.shift);
-      rows.push({ date: a.date, first: a.date !== prevDate, shiftLabel: label, role: r?.name || '', color: i >= 0 ? shiftBgHex(i, shifts.length, SH.light, SH.dark) : C.sub });
+    entries.forEach(({ a, abs }) => {
+      if (abs) {
+        const st = STATUSES[a.status];
+        rows.push({ date: a.date, first: a.date !== prevDate, shiftLabel: st?.label || a.status, role: '', absence: true, color: st?.color || C.sub });
+      } else {
+        const t = shiftTypeById(company, a.shift);
+        const r = roleById(company, a.roleId);
+        const i = shifts.findIndex(x => x.id === a.shift);
+        rows.push({ date: a.date, first: a.date !== prevDate, shiftLabel: t ? t.name : '—', role: r?.name || '', color: i >= 0 ? shiftBgHex(i, shifts.length, SH.light, SH.dark) : C.sub });
+      }
       prevDate = a.date;
     });
-    // coda assenze (sobria)
-    const tail = employeeAbsences(cid, e.id, dates).map(a => `${STATUSES[a.status]?.label || a.status}: ${dayNum(a.date)} ${monShort(a.date)}`);
 
     let bytes;
     if (format === 'png') {
       // immagine unica alta quanto serve (niente paginazione), come il PNG tabella
-      const { svg, w, h } = buildEmployeeSVG(company, e, rows, { from, to, page: 1, pages: 1, tail });
+      const { svg, w, h } = buildEmployeeSVG(company, e, rows, { from, to, page: 1, pages: 1, tail: null });
       const { blob } = await rasterize(svg, w, h, scale, 'image/png');
       bytes = new Uint8Array(await blob.arrayBuffer());
     } else {
       const groups = chunk(rows, ROWS_PER_PAGE);
       const pages = [];
       for (let i = 0; i < groups.length; i++) {
-        const last = i === groups.length - 1;
-        const { svg, w, h } = buildEmployeeSVG(company, e, groups[i], { from, to, page: i + 1, pages: groups.length, tail: last ? tail : null });
+        const { svg, w, h } = buildEmployeeSVG(company, e, groups[i], { from, to, page: i + 1, pages: groups.length, tail: null });
         const { jpeg, imgW, imgH } = await svgToJpeg(svg, w, h, scale);
         pages.push({ jpeg, imgW, imgH, pageW: PAGE.a4portrait.w, pageH: PAGE.a4portrait.h, margin: 32 });
       }
