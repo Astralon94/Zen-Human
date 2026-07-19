@@ -127,20 +127,22 @@ function employeeShifts(cid, empId, dates, shifts) {
     .filter(a => a.companyId === cid && a.employeeId === empId && a.status === 'present' && dset.has(a.date))
     .sort((x, y) => x.date.localeCompare(y.date) || (order.get(x.shift) ?? 99) - (order.get(y.shift) ?? 99));
 }
-// assenze note del dipendente nel periodo (kind 'absence'), per la coda del prospetto
+// assenze note del dipendente nel periodo (ogni status non lavorativo: ferie, malattia,
+// riposo, permessi…), per la coda del prospetto. Stesso criterio della colonna "Altro"
+// della griglia: tutto ciò che non è kind 'work' (il solo kind 'absence' escludeva Riposo).
 function employeeAbsences(cid, empId, dates) {
   const dset = new Set(dates);
   return data.attendance
-    .filter(a => a.companyId === cid && a.employeeId === empId && dset.has(a.date) && STATUSES[a.status]?.kind === 'absence')
+    .filter(a => a.companyId === cid && a.employeeId === empId && dset.has(a.date) && STATUSES[a.status]?.kind !== 'work')
     .sort((x, y) => x.date.localeCompare(y.date));
 }
-// dipendenti in ASSENZA (kind 'absence') in un giorno dell'azienda, per la colonna "Permessi"
-// della tabella. Ordinati per nome. Solo dipendenti in anagrafica (anche non attivi); i
-// "presenti fuori griglia" NON rientrano qui.
+// dipendenti non al lavoro (ogni status non 'work': ferie, malattia, riposo, permessi…) in un
+// giorno dell'azienda, per la colonna "Permessi" della tabella. Ordinati per nome. Solo
+// dipendenti in anagrafica (anche non attivi); i "presenti fuori griglia" NON rientrano qui.
 function dayAbsences(cid, date) {
   const empSet = new Set(companyEmployees(cid, { includeInactive: true }).map(e => e.id));
   return data.attendance
-    .filter(a => a.companyId === cid && a.date === date && empSet.has(a.employeeId) && STATUSES[a.status]?.kind === 'absence')
+    .filter(a => a.companyId === cid && a.date === date && empSet.has(a.employeeId) && STATUSES[a.status]?.kind !== 'work')
     .map(a => ({ e: emp(a.employeeId), status: a.status }))
     .filter(x => x.e)
     .sort((x, y) => fullName(x.e).localeCompare(fullName(y.e)));
