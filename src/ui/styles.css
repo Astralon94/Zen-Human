@@ -11,7 +11,7 @@
      --present-none resta molto chiaro per i "present" senza turno specificato. */
   --present-scale-light: #7cb6a0; --present-scale-dark: #2c5344; --present-fg-dark: #234438;
   --present-none: #b1d3c6;      --present-none-fg: #2c5344;
-  --present-mark: 58%;          /* opacità del segno d'angolo "presenza non confermata" */
+  --present-mark: #e8281c;      /* segno d'angolo "presenza non confermata": rosso brillante */
   --radius: 16px; --shadow: 0 1px 2px rgba(40,38,32,.04), 0 8px 24px rgba(40,38,32,.05);
   --fs: 15px;
   --day-gap: 6px;               /* distacco visivo tra i giorni nella griglia Turni (come Zen-Staff) */
@@ -23,7 +23,7 @@
   /* Presenza per turno (dark) — estremi della scala salvia generata a runtime. */
   --present-scale-light: #74b49b; --present-scale-dark: #2b5445; --present-fg-dark: #12241c;
   --present-none: #a2cdbd;      --present-none-fg: #14261f;
-  --present-mark: 52%;          /* opacità del segno d'angolo "presenza non confermata" (dark) */
+  --present-mark: #ff5a4d;      /* segno d'angolo "presenza non confermata" (dark): rosso brillante */
   --shadow: 0 1px 2px rgba(0,0,0,.30), 0 8px 24px rgba(0,0,0,.22);
 }
 * { box-sizing: border-box; }
@@ -226,13 +226,12 @@ table.matrix tbody td.mcell.unset.wknd { background: color-mix(in srgb, var(--li
    "non specificato" (.sh-none) resta sui token dedicati, molto chiari. */
 table.matrix tbody td.mcell.present.sh-none { background: var(--present-none); color: var(--present-none-fg); }
 table.matrix tbody td.mcell.present[class*="sh-"]:not(.sh-none) { background: var(--sh-bg, var(--present-none)); color: var(--sh-fg, var(--present-none-fg)); }
-/* Presenza non confermata: triangolino d'angolo (alto-destra) discreto. Usa currentColor
-   = il testo della cella (--sh-fg / token --present-*-fg), quindi contrasta su tutte le
-   gradazioni e in entrambi i temi senza cambiare lo sfondo. */
+/* Presenza non confermata: triangolino d'angolo (alto-destra) rosso brillante (--present-mark),
+   ben visibile su tutte le gradazioni di verde e in entrambi i temi. */
 table.matrix tbody td.mcell.present.unconfirmed::after {
   content: ""; position: absolute; top: 0; right: 0; width: 0; height: 0;
-  border-top: 7px solid color-mix(in srgb, currentColor var(--present-mark), transparent);
-  border-left: 7px solid transparent;
+  border-top: 8px solid var(--present-mark);
+  border-left: 8px solid transparent;
 }
 table.matrix tbody td.mcell:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 table.matrix td.mcell sup { font-size: 11px; line-height: 0; }
