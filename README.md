@@ -60,6 +60,10 @@ node --test tests/*.test.mjs
 npm run test:roundtrip
 ```
 
+## Licenza
+
+Rilasciato sotto licenza [MIT](LICENSE).
+
 ## Famiglia Zen
 
 Zen Human fa parte di una piccola famiglia di app self-hosted con la stessa architettura: [Zen Finance](https://github.com/Astralon94/Zen-Finance) (contabilità e fatture) e [Zen Warehouse](https://github.com/Astralon94/Zen-Warehouse) (ordini fornitori e magazzino).
