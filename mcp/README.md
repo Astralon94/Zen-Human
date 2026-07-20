@@ -37,7 +37,7 @@ Aggiungi questo blocco al file di configurazione:
   "mcpServers": {
     "zen-human": {
       "command": "node",
-      "args": ["/Users/fmdesantis/Zen-Manager-Apps/Zen-Human/mcp/server.mjs"]
+      "args": ["/percorso/assoluto/di/Zen-Manager-Apps/Zen-Human/mcp/server.mjs"]
     }
   }
 }
