@@ -7,6 +7,7 @@ import { toast, confirmDialog } from '../dom.js';
 import { applyTheme } from '../app.js';
 import { companiesSection, bindCompanies } from './aziende.js';
 import { turniConfigSection, bindTurniConfig } from './turni-config.js';
+import { usersSection, bindUsers } from './utenti.js';
 
 // Ha almeno un permesso sulle aziende (la sezione Aziende vive qui dentro).
 const canAziende = () => can('aziende.crea') || can('aziende.modifica') || can('aziende.elimina');
@@ -15,6 +16,7 @@ export function render() {
   const cAspetto = can('impostazioni.manage');   // aspetto (tema)
   const cTurni = can('turni.configura');          // configurazione turni/ruoli
   const cSoftware = can('software.aggiorna');     // aggiornamento software
+  const cUtenti = can('utenti.manage');           // gestione utenti/accessi
   const cExport = can('dati.export');             // esporta backup
   const cImport = can('dati.import');             // importa/sostituisci
   const cReset = can('dati.reset');               // azzera tutti i dati
@@ -59,6 +61,9 @@ export function render() {
     </table>
   </div>`;
 
+  // gestione utenti e accessi (sezione amministrativa)
+  if (cUtenti) { any = true; h += usersSection(); }
+
   if (cSoftware) {
     any = true;
     h += `<div class="section-title">Aggiornamento software</div>`;
@@ -87,6 +92,7 @@ export function render() {
 export function bind(root) {
   if (canAziende()) bindCompanies(root);
   if (can('turni.configura')) bindTurniConfig(root);
+  if (can('utenti.manage')) bindUsers(root);
   root.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { data.settings.theme = b.dataset.th; save(); applyTheme(); });
   root.querySelector('[data-export]')?.addEventListener('click', () => { exportJSON(); toast('Backup esportato ✓'); });
   const impFile = root.querySelector('#imp_file');

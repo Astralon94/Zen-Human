@@ -12,7 +12,6 @@ import * as bonusSanzioni from './views/bonus-sanzioni.js';
 import * as dipendenti from './views/dipendenti.js';
 import * as scadenze from './views/scadenze.js';
 import * as impostazioni from './views/impostazioni.js';
-import * as utenti from './views/utenti.js';
 
 const VIEWS = {
   rie: { mod: riepilogo, title: 'Riepilogo', icon: '◷' },
@@ -21,10 +20,9 @@ const VIEWS = {
   bse: { mod: bonusSanzioni, title: 'Voci economiche', icon: '➕' },
   dip: { mod: dipendenti, title: 'Dipendenti', icon: '👤' },
   sca: { mod: scadenze, title: 'Scadenze', icon: '⏳' },
-  utenti: { mod: utenti, title: 'Utenti', icon: '👥' },
   set: { mod: impostazioni, title: 'Impostazioni', icon: '⚙' }
 };
-const ORDER = ['rie', 'comp', 'turni', 'bse', 'dip', 'sca', 'utenti', 'set'];
+const ORDER = ['rie', 'comp', 'turni', 'bse', 'dip', 'sca', 'set'];
 
 let current = 'rie';
 let mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -36,7 +34,9 @@ export function applyTheme() {
 }
 mql.addEventListener('change', applyTheme);
 
-export function go(view) { current = view; renderApp(); window.scrollTo(0, 0); }
+// La sezione Utenti è confluita dentro Impostazioni: una route 'utenti'
+// residua (stato salvato o link interno) ripiega su 'impostazioni'.
+export function go(view) { current = view === 'utenti' ? 'set' : view; renderApp(); window.scrollTo(0, 0); }
 
 // ---- Gating della navigazione ----
 // Le voci visibili = quelle di ORDER accessibili all'utente secondo il registro

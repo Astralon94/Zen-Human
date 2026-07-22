@@ -1,20 +1,27 @@
-// ============ Vista Utenti (gestione accessi e permessi) ============
-// Riservata a chi ha `utenti.manage` (gate di nav in app.js + guardia backend).
+// ============ Gestione Utenti (sezione dentro Impostazioni) ============
+// Riservata a chi ha `utenti.manage` (gate in Impostazioni + guardia backend).
 // I dati arrivano dagli endpoint /api/utenti; il registro permessi/ruoli da meta.
 import { esc } from '../../domain/util.js';
 import { openSheet, closeSheet, toast, confirmDialog } from '../dom.js';
 import { meta, user, can, listUsers, createUser, updateUser, deleteUser } from '../../state/auth.js';
 
 let usersCache = null;   // null = non ancora caricato
-let rootEl = null;
+let boxEl = null;        // contenitore della sezione (dentro Impostazioni)
 
 const permLabel = k => (meta?.permessi || []).find(p => p.key === k)?.label || k;
 
-export function render() {
-  let h = `<div class="pagehead"><h1>Utenti</h1><span class="sub">accessi e permessi</span></div>`;
-  // Difesa a valle del gating di nav: senza `utenti.manage` non si mostra nulla.
-  if (!can('utenti.manage')) return h + `<div class="card empty">Sezione riservata agli amministratori.</div>`;
-  h += `<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-new>+ Nuovo utente</button></div>`;
+// Sezione HTML da incorporare nelle Impostazioni. Senza `utenti.manage`
+// (gating permessi) non emette nulla, così la sezione resta invisibile.
+export function usersSection() {
+  if (!can('utenti.manage')) return '';
+  return `<div class="section-title">👥 Utenti<span class="grow"></span></div>
+    <div id="usersBox">${usersInner()}</div>`;
+}
+
+// Contenuto interno (lista + nuovo utente): ridisegnato da solo dopo il caricamento
+// async, senza toccare il resto della vista Impostazioni.
+function usersInner() {
+  let h = `<div class="btnrow" style="margin-bottom:12px"><button class="btn primary" data-new>+ Nuovo utente</button></div>`;
   if (usersCache === null) return h + `<div class="card empty">Caricamento…</div>`;
   if (!usersCache.length) return h + `<div class="card empty">Nessun utente.</div>`;
   h += usersCache.map(userRow).join('');
@@ -43,14 +50,19 @@ function userRow(u) {
   </div>`;
 }
 
-export function bind(root) {
-  rootEl = root;
+export function bindUsers(root) {
   if (!can('utenti.manage')) return;
-  root.querySelector('[data-new]')?.addEventListener('click', () => openUserForm(null));
-  // NB: b.dataset.* è SEMPRE stringa, mentre u.id è numerico (INTEGER del DB): confronta come stringhe.
-  root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { const u = (usersCache || []).find(x => String(x.id) === b.dataset.edit); if (u) openUserForm(u); });
-  root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const u = (usersCache || []).find(x => String(x.id) === b.dataset.del); if (u) doDelete(u); });
+  boxEl = root.querySelector('#usersBox');
+  if (!boxEl) return;
+  bindInner(boxEl);
   if (usersCache === null) refresh();
+}
+
+function bindInner(box) {
+  box.querySelector('[data-new]')?.addEventListener('click', () => openUserForm(null));
+  // NB: b.dataset.* è SEMPRE stringa, mentre u.id è numerico (INTEGER del DB): confronta come stringhe.
+  box.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { const u = (usersCache || []).find(x => String(x.id) === b.dataset.edit); if (u) openUserForm(u); });
+  box.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const u = (usersCache || []).find(x => String(x.id) === b.dataset.del); if (u) doDelete(u); });
 }
 
 async function refresh() {
@@ -58,7 +70,7 @@ async function refresh() {
   catch (e) { usersCache = []; toast(e.message || 'Errore nel caricamento utenti'); }
   redraw();
 }
-function redraw() { if (rootEl) { rootEl.innerHTML = render(); bind(rootEl); } }
+function redraw() { if (boxEl) { boxEl.innerHTML = usersInner(); bindInner(boxEl); } }
 
 // Checkbox dei permessi assegnabili (non-adminOnly), raggruppate per `group`.
 function permGroupsHtml(selected) {
