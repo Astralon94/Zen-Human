@@ -14,7 +14,7 @@ import * as scadenze from './views/scadenze.js';
 import * as impostazioni from './views/impostazioni.js';
 
 const VIEWS = {
-  rie: { mod: riepilogo, title: 'Riepilogo', icon: '◷' },
+  rie: { mod: riepilogo, title: 'Dashboard', icon: '◷' },
   comp: { mod: compilazione, title: 'Presenze', icon: '🗓️' },
   turni: { mod: turni, title: 'Turni', icon: '🕐' },
   bse: { mod: bonusSanzioni, title: 'Voci economiche', icon: '➕' },

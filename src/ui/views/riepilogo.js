@@ -2,7 +2,7 @@
 import { data, save } from '../../state/store.js';
 import { can } from '../../state/auth.js';
 import { STATUS_ORDER, STATUSES } from '../../state/model.js';
-import { esc, fmt, fmtNum, fmtMonth, shiftMonth, fullName, daysInMonth, weekdayMon0, pad2, GIORNI, round2, thisMonth, MESI } from '../../domain/util.js';
+import { esc, fmt, fmtNum, fmtMonth, shiftMonth, fullName, daysInMonth, weekdayMon0, pad2, GIORNI, round2, thisMonth, todayStr, fmtDateFull, MESI } from '../../domain/util.js';
 import { activeCompany, co, companyEmployees, monthlyNet, attendanceStats, attendanceCell, statusInfo, nettoConsulente, laborCost, leaveStats, isMonthLocked } from '../../domain/payroll.js';
 import { printDocument, downloadText, confirmDialog, toast } from '../dom.js';
 import { go } from '../app.js';
@@ -13,11 +13,19 @@ const COLS = STATUS_ORDER.filter(k => k !== 'riposo');
 
 export function render() {
   const cid = activeCompany();
-  if (!cid) return `<div class="pagehead"><h1>Riepilogo</h1></div><div class="card empty">Crea prima un'azienda dalla sezione Aziende.</div>`;
+  if (!cid) return `<div class="pagehead"><h1>Dashboard</h1></div><div class="card empty">Crea prima un'azienda dalla sezione Aziende.</div>`;
   const month = getMonth();
   const emps = companyEmployees(cid);
 
-  let h = `<div class="pagehead"><h1>Riepilogo</h1><span class="sub">${esc((co(cid)?.emoji || '') + ' ' + co(cid)?.name)}</span></div>`;
+  let h = `<div class="pagehead"><h1>Dashboard</h1><span class="sub">${esc((co(cid)?.emoji || '') + ' ' + co(cid)?.name)}</span></div>`;
+
+  // Avviso presenze da confermare (turni passati mai spuntati). Visibile a chi può
+  // vedere/gestire le presenze; scoped sull'azienda attiva.
+  if (can('presenze.view')) {
+    const pend = pendingConfirmations(cid);
+    if (pend) h += pendingBanner(pend);
+  }
+
   h += `<div class="card" style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
     <button class="btn sm" data-mprev>‹</button>
     <div style="flex:1;text-align:center;font-weight:700">${esc(fmtMonth(month))}</div>
@@ -100,11 +108,40 @@ function lockBanner(month) {
   return `<div class="card" style="margin-bottom:12px;border-left:3px solid var(--accent);background:var(--accent-soft);font-size:13px">🔒 <b>Mese chiuso</b> — inviato al consulente. Presenze e voci di ${esc(fmtMonth(month))} non sono modificabili.</div>`;
 }
 
+// Presenze "present" mai confermate con data ANTERIORE a oggi: sono turni pianificati
+// passati (record con confirmed:false) che non sono mai stati spuntati. I record di oggi o
+// futuri con confirmed:false sono normali turni pianificati e NON contano; gli storici
+// pre-feature nascono già confermati in migrate() (confirmed:true), quindi non compaiono.
+// Scoped sull'azienda attiva. Ritorna {count, oldest:'YYYY-MM-DD'} o null.
+function pendingConfirmations(cid) {
+  const today = todayStr();
+  const recs = data.attendance.filter(a =>
+    a.companyId === cid && a.status === 'present' && a.confirmed === false && a.date < today);
+  if (!recs.length) return null;
+  const oldest = recs.reduce((m, a) => (a.date < m ? a.date : m), recs[0].date);
+  return { count: recs.length, oldest };
+}
+// Banner cliccabile: scorciatoia verso Presenze aperte sul mese della più vecchia non confermata.
+function pendingBanner(pend) {
+  const noun = pend.count === 1 ? 'presenza da confermare' : 'presenze da confermare';
+  return `<div class="card" data-pending data-month="${esc(pend.oldest.slice(0, 7))}" role="button" tabindex="0"
+    style="margin-bottom:14px;cursor:pointer;border-left:3px solid var(--orange);background:color-mix(in srgb, var(--orange) 12%, var(--card));font-size:13px;display:flex;align-items:center;gap:8px">
+    <span style="font-size:16px">⚠️</span>
+    <span><b>${pend.count} ${noun}</b> — dal ${esc(fmtDateFull(pend.oldest))}. <span class="muted">Tocca per aprire le Presenze.</span></span>
+  </div>`;
+}
+
 export function bind(root) {
   root.querySelector('[data-mprev]').onclick = () => { setMonth(shiftMonth(getMonth(), -1)); rerender(); };
   root.querySelector('[data-mnext]').onclick = () => { setMonth(shiftMonth(getMonth(), 1)); rerender(); };
   root.querySelector('[data-mtoday]')?.addEventListener('click', () => { setMonth(thisMonth()); rerender(); });
   root.querySelectorAll('[data-emp]').forEach(b => b.onclick = () => { openEmployee(b.dataset.emp); go('dip'); });
+  const pending = root.querySelector('[data-pending]');
+  if (pending) {
+    const openPending = () => { setMonth(pending.dataset.month); go('comp'); };
+    pending.onclick = openPending;
+    pending.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPending(); } });
+  }
   root.querySelector('[data-lock]')?.addEventListener('click', toggleLock);
   root.querySelector('[data-pdf]')?.addEventListener('click', exportPDF);
   root.querySelector('[data-pdfcons]')?.addEventListener('click', exportConsulente);

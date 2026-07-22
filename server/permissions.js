@@ -81,7 +81,7 @@ export const PERMISSIONS = [
 // è raggiungibile con UNO QUALSIASI dei permessi in `any` (contiene sotto-sezioni
 // aspetto/aggiornamento/export/import/reset/aziende gestite da permessi distinti).
 export const NAV = [
-  { key: 'rie',    icon: '◷',  label: 'Riepilogo',       perm: 'riepilogo.view' },
+  { key: 'rie',    icon: '◷',  label: 'Dashboard',       perm: 'riepilogo.view' },
   { key: 'comp',   icon: '🗓️', label: 'Presenze',        perm: 'presenze.view' },
   { key: 'turni',  icon: '🕐', label: 'Turni',           perm: 'turni.view' },
   { key: 'bse',    icon: '➕', label: 'Voci economiche',  perm: 'voci.view' },

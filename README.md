@@ -9,7 +9,7 @@ Gestione del personale **self-hosted e 100% locale**: presenze, pianificazione t
 - **Turni** — griglia di pianificazione settimanale o per periodo libero (giorni × tipi di turno sulle righe, **ruoli** sulle colonne): assegnazione a pennello, drag & drop per spostare e scambiare, segnaposto testuali per collaboratori esterni, elenco degli assenti e dei "da inserire" per giorno. Ruoli e tipi di turno (nome e orari) sono configurabili per azienda.
 - **Export turni** — PDF della tabella (A4, multipagina), PNG (anche con soli nomi o con gli ID/username dei dipendenti) e ZIP con il prospetto individuale per ogni dipendente (PDF o PNG), pronto da inviare.
 - **Scheda dipendente** — anagrafica con colore e ID/username, scadenze contratto/libretto, **stipendio pattuito storicizzato per mese**, voci del mese (bonus, sanzioni, acconti), **prestiti rateizzati** con piano rate.
-- **Riepilogo (prospetto consulente)** — tabella mensile con giorni lavorati, assenze per tipo e netto per dipendente (`pattuito + bonus − sanzioni − acconti − rate prestiti − trattenute assenze`); stati e totali **sempre calcolati, mai salvati**. Export **PDF** e **CSV**.
+- **Dashboard (prospetto consulente)** — tabella mensile con giorni lavorati, assenze per tipo e netto per dipendente (`pattuito + bonus − sanzioni − acconti − rate prestiti − trattenute assenze`); stati e totali **sempre calcolati, mai salvati**. Export **PDF** e **CSV**.
 - **Multi-utente** — login con permessi granulari per sezione e azione (presenze, turni, retribuzioni, anagrafiche…).
 - **Aggiornamenti in-app** — l'app controlla le release di questo repository e si aggiorna da sola (vedi sotto).
 
